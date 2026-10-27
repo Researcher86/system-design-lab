@@ -129,3 +129,50 @@ the tail under a continuous high-priority stream, and the lab says so instead
 of hiding it. Aging, weighted fair queueing and per-tenant quotas are the
 usual remedies; they are listed as stretch work, not implemented as if the
 strict heap were fair.
+
+## 2026-10-27 — Consistent hashing is compared with two baselines
+
+`ModuloHash` is the naive placement: O(1), even for independent keys, and
+almost completely remapped when the node count changes. `HashRing` is the
+consistent-hash implementation with virtual nodes; `RendezvousHash` is the
+ring-free alternative with an O(nodes) lookup. Keeping all three makes the
+remap experiment a differential test rather than a claim. The ring stores 150
+tokens per node by default: more tokens smooth the arcs, while fewer tokens
+save memory and make the partition sizes lumpier.
+
+## 2026-10-27 — Replication is budgeted, not free
+
+At a fixed total cache capacity, RF=2 stores fewer unique keys because every
+copy occupies space. The measured cost was 6.1 hit-ratio points in the
+homogeneous Zipf run; the measured benefit was a 73.5% hit ratio during a node
+failure against 55.2% at RF=1. The lab reports both sides instead of claiming
+replication is simply safer. A production cache would also need a repair
+budget, a consistency model and a decision about whether cache data must
+survive a node loss at all.
+
+## 2026-10-27 — A cache failure loses cache data
+
+`CacheCluster::failNode()` drops the node's entries by default and recovery
+starts empty. This is the honest model for an in-memory cache: the origin is
+still the source of truth, and the failure turns into misses and reloads. The
+alternative — treating the cache as durable — would hide the reload cost and
+make the failure experiment meaningless. `loseData: false` exists for a
+network partition, where the entries are still there when the node returns.
+
+## 2026-10-27 — Read repair is best-effort repopulation
+
+When a read is served by a replica and the primary is reachable, the cluster
+writes the value back to the primary. This shortens the window in which the
+primary is cold after recovery, but it is not a consistency protocol: a read
+that never happens does not repair anything, and concurrent writes can still
+race. The code says "cache", not "replicated store", and the book must not
+upgrade read repair into a guarantee.
+
+## 2026-10-27 — LRU order lives in the PHP array
+
+`LruStore` uses insertion order as the recency order: a hit unsets and
+reinserts the key at the end, and eviction removes the first key. This is O(1)
+expected per operation and one array entry per value, with no linked list and
+no second index. The trade-off is that the implementation relies on PHP's
+ordered hash map; a language without that property would need an explicit
+list. The benchmark measures this implementation, not an abstract LRU.

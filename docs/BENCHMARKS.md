@@ -351,3 +351,96 @@ delayed heap does not compete with promotions; the round trip pays for the
 lease map, the priority queue extraction and the processed-id mark. The
 `oldest pending` benchmark reads a heap top after the completed jobs have been
 popped lazily, so it mostly measures the method call rather than a scan.
+
+### Chapter 05 — Distributed cache
+
+Development run in Docker on macOS (aarch64, PHP 8.5.11, OPcache CLI off, JIT
+off, Xdebug off, Zend MM). The environment block reported git `857d69e`
+because the chapter 05 tree was uncommitted at measurement time. These are
+relative observations, not universal constants.
+
+`make experiment ARGS="cache:remap"` placed 20,000 keys on eight nodes, added
+a ninth and counted the keys whose primary node changed:
+
+| strategy | moved | share | expected |
+|---|---:|---:|---:|
+| modulo | 17,810 | 89.0% | 88.9% |
+| ring, 150 vnodes | 2,141 | 10.7% | 11.1% |
+| rendezvous | 2,190 | 10.9% | 11.1% |
+
+Modulo hashing changes the divisor for every key at once. Consistent and
+rendezvous hashing move only the keys whose owner changed, so the expected
+blast radius of one membership change is 1/(N+1).
+
+`make experiment ARGS="cache:hit-ratio"` used 20,000 Zipf keys, 100,000
+requests and a total capacity of 5,000 entries:
+
+| mode | nodes | RF | per node | hits | misses | hit ratio | evictions |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| single LRU | 1 | 1 | 5,000 | 79,529 | 20,471 | 79.5% | 15,471 |
+| sharded | 4 | 1 | 1,250 | 79,463 | 20,537 | 79.5% | 15,537 |
+| sharded 2x | 8 | 1 | 625 | 79,416 | 20,584 | 79.4% | 15,584 |
+| replicated | 4 | 2 | 1,250 | 73,394 | 26,606 | 73.4% | 48,397 |
+
+At this capacity and a homogeneous hash assignment, splitting one LRU into
+four or eight shards barely changed the aggregate hit ratio: each shard saw
+about its share of keys and had about its share of memory. Replication at the
+same total capacity cost 6.1 points because both copies occupy capacity, so
+the cluster holds fewer unique keys. That is the price the failure experiment
+pays back.
+
+`make experiment ARGS="cache:failure"` warmed two clusters on the same stream,
+failed `cache-0` with data loss, then recovered it:
+
+| RF | phase | reads | hits | hit ratio | primary | replica | misses | repairs |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | before | 20,000 | 16,196 | 81.0% | 16,196 | 0 | 3,804 | 0 |
+| 1 | during | 20,000 | 11,042 | 55.2% | 11,042 | 0 | 8,958 | 0 |
+| 1 | after | 20,000 | 15,791 | 79.0% | 15,791 | 0 | 4,209 | 0 |
+| 2 | before | 20,000 | 14,799 | 74.0% | 14,771 | 28 | 5,201 | 28 |
+| 2 | during | 20,000 | 14,709 | 73.5% | 9,930 | 4,779 | 5,291 | 26 |
+| 2 | after | 20,000 | 14,772 | 73.9% | 14,558 | 214 | 5,228 | 214 |
+
+Both clusters lost the 1,250 entries on the failed node. RF=1 dropped 25.8
+points and had to reload the lost keys from the origin; RF=2 kept almost the
+same hit ratio because the replica served 4,779 reads. After recovery, 214
+reads found the empty primary and repaired it. The small number of replica
+hits before the failure comes from independent per-node LRU eviction orders:
+the primary can evict a key that the replica still holds. Read repair is a
+repopulation strategy, not a consistency guarantee.
+
+`make experiment ARGS="cache:balance"` sent 100,000 Zipf requests to eight
+nodes:
+
+| strategy | busiest | max key share | max traffic share | min traffic share | CV traffic |
+|---|---|---:|---:|---:|---:|
+| modulo | cache-2 | 12.8% | 20.3% | 8.7% | 0.269 |
+| ring, 1 vnode | cache-1 | 25.1% | 27.7% | 0.0% | 0.630 |
+| ring, 150 vnodes | cache-0 | 13.7% | 19.2% | 8.7% | 0.272 |
+| rendezvous | cache-3 | 12.8% | 20.1% | 8.6% | 0.303 |
+
+One token per node left the partition sizes to chance: one node owned 25.1% of
+keys and another owned none, so its traffic share was zero. Virtual nodes
+smoothed the arcs. Even with balanced key counts, Zipf popularity put about
+19–20% of traffic on the busiest node, so the capacity plan follows traffic,
+not key count. Rendezvous hashing balances comparably at this size but pays
+O(nodes) per lookup.
+
+`make benchmark ARGS="distributed-cache --repetitions=3"` medians:
+
+| benchmark | iterations | median ms | ops/sec |
+|---|---:|---:|---:|
+| modulo locate | 100,000 | 38.404 | 2,603,921 |
+| ring locate | 100,000 | 79.945 | 1,250,856 |
+| ring locate rf3 | 100,000 | 90.098 | 1,109,906 |
+| rendezvous locate | 100,000 | 578.122 | 172,974 |
+| lru get hit | 100,000 | 18.522 | 5,399,021 |
+| lru put evict | 20,000 | 54.539 | 366,709 |
+| cluster get rf1 | 100,000 | 133.203 | 750,731 |
+| cluster put rf2 | 20,000 | 29.045 | 688,594 |
+
+The ring pays a binary search over 3,000 virtual-node positions; rendezvous
+pays a scan of 20 nodes for every key. The cluster read adds the placement
+call, the node lookup and the counter updates on top of the LRU hit. A
+replicated put writes two nodes, so it is not expected to match a single-node
+put.

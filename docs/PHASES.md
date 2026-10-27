@@ -463,6 +463,59 @@ why the delayed heap is separate from the ready heap, why priority without
 aging can starve the tail, and why a backlog is measured by age as well as
 depth. Deferred to the book phase.
 
+### Phase 6 — Chapter 05: Distributed Cache — code and measurements complete
+
+**Status (2026-10-27):** implementation, tests, experiments and benchmark
+suite are complete.
+
+**Code:** `src/DistributedCache/` contains the `HashStrategy` contract,
+`ModuloHash`, `HashRing`, `RendezvousHash`, `LruStore`, `CacheSource`,
+`CacheLookup` and `CacheCluster`. The ring places 150 virtual nodes per
+physical node on a 60-bit space, resolves token collisions by probing and
+finds the first token clockwise with a binary search. The cluster reads the
+primary first, then replicas; it skips failed nodes, serves a replica hit
+while the primary is down, and repairs the primary on a later read. A failed
+node loses its data by default, recovery starts empty, and writes during a
+failure may have fewer copies than the replication factor.
+
+**Expected complexity:** modulo lookup is O(1); ring lookup is O(log V) with V
+virtual nodes and O(V) memory; rendezvous lookup is O(nodes × replicas) with
+no ring; LRU get/put is O(1) expected because a hit reinserts at the array end.
+A cluster read adds O(replicas), and read repair adds one O(1) write.
+
+**Experiments:** `cache:remap` on one membership change, `cache:hit-ratio`
+for single, sharded and replicated LRUs at the same total capacity,
+`cache:failure` at RF=1 and RF=2, and `cache:balance` for key and traffic
+distribution.
+
+**Result:** 273 tests pass. Remapping 20,000 keys from 8 to 9 nodes moved
+17,810 keys under modulo hashing (89.0%, expected 88.9%), 2,141 under the ring
+(10.7%, expected 11.1%) and 2,190 under rendezvous hashing (10.9%). At a total
+capacity of 5,000 entries and 100,000 Zipf requests over 20,000 keys, a single
+LRU reached a 79.5% hit ratio, four shards of 1,250 reached 79.5%, eight
+shards of 625 reached 79.4%, and four replicated shards at RF=2 reached 73.4%:
+at this homogeneity, partitioning barely changed the aggregate hit ratio,
+while the second copy cost unique capacity. In the failure run (four nodes,
+1,250 entries each, 50,000 warm-up requests and 20,000 requests per phase),
+RF=1 fell from 81.0% before the failure to 55.2% during it and recovered to
+79.0%; RF=2 moved from 74.0% to 73.5% and back to 73.9%, served 4,779 replica
+hits during the failure and performed 214 read repairs after recovery. Both
+lost the 1,250 entries held by `cache-0`. With 100,000 requests across eight
+nodes, modulo hashing put 20.3% of traffic on its busiest node, the ring with
+one token per node 27.7% (with one node receiving no traffic at all), the ring
+with 150 virtual nodes 19.2%, and rendezvous 20.1%. The development benchmark
+put modulo locate at 38.404 ms for 100,000 lookups, ring locate at 79.945 ms,
+ring RF=3 locate at 90.098 ms, rendezvous locate at 578.122 ms, an LRU hit at
+18.522 ms, an evicting LRU put at 54.539 ms for 20,000, a cluster primary hit
+at 133.203 ms and a replicated cluster put at 29.045 ms for 20,000.
+
+**Book:** why modulo rehashing moves almost everything, what consistent
+hashing actually bounds, why virtual nodes are a balance/memory trade-off, why
+replication costs hit ratio at a fixed budget and buys availability during a
+failure, why an LRU is per node rather than global, and why read repair is a
+cache repopulation strategy rather than a consistency guarantee. Deferred to
+the book phase.
+
 ---
 
 ## 9. Phase 9 — Integration scenario

@@ -59,6 +59,20 @@ A producer of 100 jobs per tick against a consumer of 80 left 2,000 jobs at
 depth and the oldest job 19,000 ms old after 100 ticks, so depth alone would
 understate the latency.
 
+Chapter 05 makes the cache row concrete. Moving from eight to nine nodes
+moved 89.0% of keys under modulo hashing but only 10.7% under a consistent
+ring and 10.9% under rendezvous hashing, against an expected 1/9 = 11.1%.
+The ring paid O(log V) lookup over 3,000 virtual-node positions; rendezvous
+paid an O(nodes) scan and was 7.2x slower per lookup in the development
+benchmark. At a fixed total capacity of 5,000 entries, four shards of 1,250
+and eight shards of 625 kept the aggregate hit ratio at 79.5% and 79.4%, while
+RF=2 fell to 73.4% because the second copy consumed unique capacity. When a
+node failed with data loss, RF=1 fell from 81.0% to 55.2% and RF=2 stayed at
+73.5% by serving 4,779 replica hits; after recovery, 214 reads repaired the
+empty primary. With one virtual node per physical node, the busiest node held
+25.1% of keys and one node held none, which is why the ring's balance is a
+memory-for-variance trade-off rather than a free property.
+
 ## What is not claimed
 
 - No universal time complexity for PHP arrays or the engine allocator.
