@@ -34,13 +34,19 @@ make scenario                                # the one end-to-end flow
 make benchmark ARGS="demo"                   # text report with environment
 ```
 
-Chapter 01 is runnable as well:
+Chapters 01 and 02 are runnable as well:
 
 ```bash
 make experiment ARGS="rate:burst"
 make experiment ARGS="rate:accuracy"
 make experiment ARGS="rate:memory"
 make benchmark ARGS="rate-limiter --repetitions=5"
+
+make experiment ARGS="shorten:collisions"
+make experiment ARGS="shorten:space"
+make experiment ARGS="shorten:idempotency"
+make experiment ARGS="shorten:memory"
+make benchmark ARGS="url-shortener --repetitions=5"
 ```
 
 Open a shell in the same container with `make shell`; stop it with `make down`.
@@ -63,7 +69,7 @@ The order is fixed by the book. Implementation follows the same order.
 | # | Chapter | What the code shows | Status |
 |---|---|---|---|
 | 01 | Rate Limiter | token bucket, fixed window, sliding log and sliding counter under the same request stream | ✅ code and measurements |
-| 02 | URL Shortener | base62 identifiers, sequential and random generation, collisions and idempotency | ⏳ planned |
+| 02 | URL Shortener | base62 identifiers, sequential, random and hashed generation, collisions and idempotency | ✅ code and measurements |
 | 03 | Notification Service | preferences, deduplication, quiet hours, fan-out and digest batching | ⏳ planned |
 | 04 | Job Queue | priority and delay, leases, visibility timeouts, retries and dead letters | ⏳ planned |
 | 05 | Distributed Cache | consistent hashing, LRU nodes, replication and failure fallback | ⏳ planned |

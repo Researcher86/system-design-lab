@@ -336,6 +336,48 @@ attempts and the token bucket at 10.789 ms.
 an estimate, and why a limiter needs a defined contract for clock and key
 scope. Deferred to the book phase.
 
+### Phase 3 — Chapter 02: URL Shortener — code and measurements complete
+
+**Status (2026-10-27):** implementation, tests, experiments and benchmark
+suite are complete.
+
+**Code:** `src/Shortener/` contains `Base62`, `SequentialIdGenerator`,
+`RandomIdGenerator`, `HashIdGenerator`, `UrlShortener`,
+`InMemoryLinkRepository`, `ShortLink`, `ShortenResult`, `DuplicateCode` and
+`CodeSpaceExhausted`. The generator contract includes the retry attempt:
+random and sequential generators ignore it, while the hash generator mixes it
+into the input so a collision can actually be escaped. The service checks
+tenant + URL before allocating a code, validates custom aliases, and bounds
+the collision retry budget.
+
+**Expected complexity:** base62 encode/decode is O(length); a code lookup is
+expected O(1); shortening is expected O(1) plus the retry count. The
+repository keeps a second index for tenant + URL idempotency, so memory is
+roughly two index entries per link.
+
+**Experiments:** `shorten:collisions` (random and hashed draws against the
+birthday bound), `shorten:space` (capacity and a real exhaustion run at two
+characters), `shorten:idempotency` (Zipf submissions collapse to rows) and
+`shorten:memory` (the object, the code index and the tenant + URL index).
+
+**Result:** 143 tests pass. At 20,000 links in a 238,328-code space (8.4%
+fill), sequential ids had 0 collisions, random 878 and hashed 881, against a
+birthday estimate of 839. A 5,000-draw run into a 3,844-code space exhausted
+sequential ids at draw 3,845, random at 2,771 (2,223 collisions) and hashed at
+2,795 (2,200 collisions): the retry budget stops random allocation well before
+the theoretical capacity. The idempotency run turned 50,000 submissions into
+7,172 rows and 42,828 hits, avoiding 7.0x row amplification. Twenty thousand
+links cost 303.7 bytes/link as objects, 329.5 with the code index and 475.8
+with both indexes; the tenant + URL index alone is 146.3 bytes/link. The
+development benchmark put base62 encode at 30.732 ms, decode at 31.771 ms,
+sequential ids at 5.219 ms, random ids at 32.856 ms and hashed ids at 24.482 ms
+for 100,000 operations.
+
+**Book:** why seven characters are enough capacity but random allocation still
+needs collision handling, why idempotency is a second index rather than a free
+property, and why the retry budget is part of the service contract. Deferred to
+the book phase.
+
 ---
 
 ## 9. Phase 9 — Integration scenario

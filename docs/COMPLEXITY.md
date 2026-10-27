@@ -28,6 +28,15 @@ Filled in as the chapters land.
 | Webhook | O(subscriptions) fan-out; retry O(attempts) | attempts, circuit opens, dead letters | a retry storm consumes the same capacity as the original load |
 | Search | index O(tokens); query O(postings + ranking) | postings scanned, terms, shard queries | a broad term scans a large fraction of the index |
 
+Chapter 02 makes the shortener row concrete. At 20,000 links in a 238,328-code
+space, random and hashed generators recorded 878 and 881 failed draws against
+a birthday estimate of 839; the sequential control recorded none. In a
+two-character space the 20-attempt retry budget stopped random allocation at
+2,770 of 3,844 codes (72.1%), so capacity is an upper bound, not a practical
+fill target. Idempotency turned 50,000 submissions into 7,172 rows, but the
+tenant + URL index cost 146.3 bytes/link on top of the code index — the
+duplicate suppression is bought with memory, not assumed.
+
 ## What is not claimed
 
 - No universal time complexity for PHP arrays or the engine allocator.

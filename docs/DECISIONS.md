@@ -50,3 +50,24 @@ The search chapter implements an inverted index, BM25 and shard fan-out in one
 process. It does not implement replication, segment merges, a real analyzer or
 a network protocol. The shard experiment measures fan-out cost, not cluster
 coordination.
+
+## 2026-10-27 — Id generators see the retry attempt
+
+`IdGenerator::next()` takes a zero-based attempt number. Sequential and random
+generators ignore it; the hash generator mixes it into the input. A hash of
+tenant + URL alone is deterministic, so retrying after a collision would return
+the same taken code every time and exhaust the budget with no chance of
+success. The cost is a slightly wider interface that exposes an allocation
+detail; the benefit is that every generator can actually recover from a
+collision and the retry budget means the same thing for all of them.
+
+## 2026-10-27 — Idempotency is a second index
+
+The shortener looks up tenant + URL before allocating a code. This makes a
+repeated submission return the existing link instead of creating a second row,
+but it requires a second index over the same objects. The measured cost is
+146.3 bytes/link on top of the code index at 20,000 links. The alternative —
+deduplicating by scanning or accepting duplicate rows — moves the cost to
+latency or storage. The lab keeps the explicit index and reports it; a
+production store would move both indexes to a database and measure pages, not
+hash buckets.
