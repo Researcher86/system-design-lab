@@ -1,0 +1,43 @@
+# Dependencies
+/vendor/
+
+# Running caches and tool state
+/.phpunit.result.cache
+/.phpunit.cache/
+/.php-cs-fixer.cache
+/build/logs/
+/coverage/
+/clover.xml
+
+# Static analysis
+/.phpstan/
+/phpstan-baseline.neon
+
+# IDE and local drafts
+/.idea/
+/.vscode/
+/.draft/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Composer
+composer.phar
+
+# Generated experiment output - keep the directories, not the results
+/var/benchmarks/*
+!/var/benchmarks/.gitkeep
+/var/results/*
+!/var/results/.gitkeep
+/var/datasets/*
+!/var/datasets/.gitkeep

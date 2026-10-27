@@ -1,0 +1,35 @@
+{
+    "name": "researcher86/system-design-lab",
+    "type": "project",
+    "license": "MIT",
+    "description": "A measured laboratory of rate limiting, short links, notifications, queues, distributed caches, webhooks and search.",
+    "autoload": {
+        "psr-4": {
+            "SystemDesignLab\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SystemDesignLab\\Tests\\": "tests/"
+        }
+    },
+    "require": {
+        "php": "^8.5",
+        "ext-pcntl": "*",
+        "ext-posix": "*"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.0",
+        "phpstan/phpstan": "^2.2",
+        "phpunit/phpunit": "^11.5"
+    },
+    "scripts": {
+        "test": "phpunit",
+        "analyse": "rm -rf /tmp/phpstan && phpstan analyse --memory-limit=1G",
+        "format": "php-cs-fixer fix --diff",
+        "format:check": "php-cs-fixer fix --diff --dry-run"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

@@ -1,0 +1,138 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+use SystemDesignLab\Benchmark\Benchmark;
+use SystemDesignLab\Benchmark\BenchmarkReport;
+use SystemDesignLab\Benchmark\BenchmarkRunner;
+use SystemDesignLab\Benchmark\Environment;
+use SystemDesignLab\Benchmark\Formatter\CsvFormatter;
+use SystemDesignLab\Benchmark\Formatter\Formatter;
+use SystemDesignLab\Benchmark\Formatter\JsonFormatter;
+use SystemDesignLab\Benchmark\Formatter\TextFormatter;
+use SystemDesignLab\Cli\Arguments;
+
+$suites = [];
+
+foreach (glob(dirname(__DIR__) . '/benchmarks/*.php') ?: [] as $file) {
+    $suites[basename($file, '.php')] = $file;
+}
+
+$fail = static function (string $message) use ($suites): never {
+    fwrite(STDERR, $message . "\n\n" . usage($suites));
+
+    exit(1);
+};
+
+/** @var array<string, Formatter> $formatters */
+$formatters = [
+    'text' => new TextFormatter(),
+    'json' => new JsonFormatter(),
+    'csv' => new CsvFormatter(),
+];
+
+$known = ['format', 'output', 'iterations', 'repetitions', 'warmups'];
+
+try {
+    $arguments = Arguments::parse(array_slice($argv, 1));
+    $unknown = array_keys($arguments->except(...$known));
+
+    if ($unknown !== []) {
+        $fail(sprintf(
+            'Unknown option --%s. Known options: %s',
+            implode(', --', $unknown),
+            implode(', ', $known),
+        ));
+    }
+
+    $iterations = $arguments->has('iterations') ? $arguments->positiveInt('iterations', 1) : null;
+    $runner = new BenchmarkRunner(
+        repetitions: $arguments->positiveInt('repetitions', 5),
+        warmups: $arguments->nonNegativeInt('warmups', 1),
+    );
+} catch (InvalidArgumentException $e) {
+    $fail($e->getMessage());
+}
+
+$suite = $arguments->command;
+
+if ($suite === null) {
+    fwrite(STDOUT, usage($suites));
+
+    exit(0);
+}
+
+if (!isset($suites[$suite])) {
+    $fail(sprintf('Unknown suite: %s', $suite));
+}
+
+$format = $arguments->string('format', 'text');
+
+if (!isset($formatters[$format])) {
+    $fail(sprintf('Unknown format: %s (text, json or csv)', $format));
+}
+
+/** @var mixed $loaded */
+$loaded = require $suites[$suite];
+
+if (!is_array($loaded)) {
+    $fail(sprintf('%s did not return a list of benchmarks', $suites[$suite]));
+}
+
+$benchmarks = [];
+
+foreach ($loaded as $benchmark) {
+    if (!$benchmark instanceof Benchmark) {
+        $fail(sprintf('%s contains a value that is not a Benchmark', $suites[$suite]));
+    }
+
+    $benchmarks[] = $benchmark;
+}
+
+$results = [];
+
+foreach ($benchmarks as $benchmark) {
+    fwrite(STDERR, sprintf("running %s ...\n", $benchmark->name));
+    $results[] = $runner->run(
+        $benchmark->name,
+        $benchmark->run,
+        $iterations ?? $benchmark->iterations,
+    );
+}
+
+$rendered = $formatters[$format]->format(new BenchmarkReport($suite, Environment::detect(), $results));
+
+if (!$arguments->has('output')) {
+    fwrite(STDOUT, $rendered);
+
+    exit(0);
+}
+
+$path = $arguments->string('output', '');
+
+if (file_put_contents($path, $rendered) === false) {
+    fwrite(STDERR, sprintf("Unable to write %s\n", $path));
+
+    exit(1);
+}
+
+fwrite(STDERR, sprintf("wrote %s\n", $path));
+
+/**
+ * @param array<string, string> $suites
+ */
+function usage(array $suites): string
+{
+    return "Usage: php bin/benchmark <suite> [options]\n\n"
+        . "Suites:\n"
+        . implode('', array_map(static fn (string $name): string => "  {$name}\n", array_keys($suites)))
+        . "\nOptions:\n"
+        . "  --format=text|json|csv   output format (default: text)\n"
+        . "  --output=PATH            write to a file instead of stdout\n"
+        . "  --iterations=N           override every benchmark's iteration count\n"
+        . "  --repetitions=N          timed repetitions per benchmark (default: 5)\n"
+        . "  --warmups=N              discarded repetitions before timing (default: 1, 0 to time the first)\n";
+}

@@ -1,0 +1,98 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+use SystemDesignLab\Cli\Arguments;
+use SystemDesignLab\Experiment\ExperimentRunner;
+use SystemDesignLab\Experiment\Options;
+use SystemDesignLab\Experiment\Output;
+use SystemDesignLab\Experiment\Registry;
+
+$registry = new Registry(dirname(__DIR__) . '/experiments');
+
+$fail = static function (string $message) use ($registry): never {
+    fwrite(STDERR, $message . "\n\n" . usage($registry));
+
+    exit(1);
+};
+
+try {
+    $arguments = Arguments::parse(array_slice($argv, 1));
+    $options = Options::fromStrings($arguments->except('format', 'output'));
+} catch (InvalidArgumentException $e) {
+    $fail($e->getMessage());
+}
+
+$name = $arguments->command;
+
+if ($name === null) {
+    fwrite(STDOUT, usage($registry));
+
+    exit(0);
+}
+
+if (!$registry->has($name)) {
+    $fail(sprintf('Unknown experiment: %s', $name));
+}
+
+$format = $arguments->string('format', 'text');
+
+if (!in_array($format, ['text', 'json'], true)) {
+    $fail(sprintf('Unknown format: %s (text or json)', $format));
+}
+
+if ($arguments->has('output') && $format !== 'json') {
+    $fail('--output needs --format=json; text mode streams prose as the experiment runs');
+}
+
+$output = new Output(STDOUT, quiet: $format === 'json');
+
+try {
+    $result = (new ExperimentRunner($registry))->run($name, $options, $output);
+} catch (InvalidArgumentException $e) {
+    $fail($e->getMessage());
+}
+
+$rendered = $format === 'json'
+    ? json_encode($result->toArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n"
+    : '';
+
+if (!$arguments->has('output')) {
+    fwrite(STDOUT, $rendered);
+
+    exit(0);
+}
+
+$path = $arguments->string('output', '');
+
+if (file_put_contents($path, $rendered) === false) {
+    fwrite(STDERR, sprintf("Unable to write %s\n", $path));
+
+    exit(1);
+}
+
+fwrite(STDERR, sprintf("wrote %s\n", $path));
+
+function usage(Registry $registry): string
+{
+    $usage = "Usage: php bin/experiment <experiment> [options]\n\nExperiments:\n";
+
+    foreach ($registry->all() as $name => $experiment) {
+        $usage .= sprintf("  %-32s %s\n", $name, $experiment->description);
+    }
+
+    $usage .= "\nCommon options:\n";
+
+    foreach (Options::KNOWN as $option => $description) {
+        $usage .= sprintf("  --%-24s %s\n", $option . '=VALUE', $description);
+    }
+
+    $usage .= sprintf("  --%-24s %s\n", 'format=text|json', 'prose for a reader, or the measurements as JSON');
+    $usage .= sprintf("  --%-24s %s\n", 'output=PATH', 'write the JSON result to a file (needs --format=json)');
+    $usage .= "\nAn experiment refuses an option it does not read; its own list is in its file.\n";
+
+    return $usage;
+}
