@@ -61,6 +61,25 @@ success. The cost is a slightly wider interface that exposes an allocation
 detail; the benefit is that every generator can actually recover from a
 collision and the retry budget means the same thing for all of them.
 
+## 2026-10-27 — Deduplication is per channel
+
+The dedup key is tenant + user + channel + event. A user with email and push
+has two independent delivery promises for one event, so suppressing the second
+channel because the first was sent would silently drop a message. The cost is
+one key and one claim per channel; the benefit is that retries and duplicate
+events are suppressed exactly where the duplicate would be delivered. The
+dedup map retains one expiry per key, and a duplicate does not extend it.
+
+## 2026-10-27 — Quiet hours defer, digest batches
+
+A non-urgent notification that arrives in a quiet window is scheduled for the
+first allowed instant, not discarded. Digest mode is a separate opt-in that
+holds non-urgent notifications until the next day. Urgent notifications bypass
+both because urgency is about latency; they still pass through deduplication
+because urgency is not a reason to send the same message twice. The trade-off
+is that deferral and digest both need storage and a clock boundary, while
+immediate delivery needs neither.
+
 ## 2026-10-27 — Idempotency is a second index
 
 The shortener looks up tenant + URL before allocating a code. This makes a

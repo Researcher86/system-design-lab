@@ -197,3 +197,65 @@ A new link pays for object construction, two index inserts and a write
 counter; an idempotent hit pays for the URL lookup and returns the existing
 object. The resolve benchmarks include a code lookup and a counter update.
 
+### Chapter 03 — Notification service
+
+Development run in Docker on macOS (aarch64, PHP 8.5.11, OPcache CLI off, JIT
+off, Xdebug off, Zend MM). These are relative observations, not universal
+constants.
+
+`make experiment ARGS="notify:fanout"` held 10,000 events constant and enabled
+one channel at a time:
+
+| channels | events | channel intents | deliveries | intents/event |
+|---:|---:|---:|---:|---:|
+| 1 | 10,000 | 10,000 | 10,000 | 1.0 |
+| 2 | 10,000 | 20,000 | 20,000 | 2.0 |
+| 3 | 10,000 | 30,000 | 30,000 | 3.0 |
+
+`make experiment ARGS="notify:dedup"` used 10,000 events, 5,000 duplicates, 2
+channels and a 60,000 ms TTL:
+
+| phase | attempts | intents | delivered | suppressed | suppressed share |
+|---|---:|---:|---:|---:|---:|
+| unique events | 10,000 | 20,000 | 20,000 | 0 | 0.0% |
+| duplicates inside TTL | 5,000 | 10,000 | 0 | 10,000 | 100.0% |
+| duplicates after TTL | 5,000 | 10,000 | 10,000 | 0 | 0.0% |
+
+The store retained 20,000 keys — one per event and channel, not one per
+attempt. A duplicate does not extend the TTL. At `--ttl-ms=0` the store
+disables suppression and the same replay is delivered every time.
+
+`make experiment ARGS="notify:digest"` planned the same 10,000 events for
+1,000 users over two channels:
+
+| mode | events | channel intents | messages | items/message | messages/event |
+|---|---:|---:|---:|---:|---:|
+| immediate | 10,000 | 20,000 | 20,000 | 1.0 | 2.00 |
+| digest | 10,000 | 20,000 | 2,000 | 10.0 | 0.2000 |
+
+Digest replaced 20,000 immediate messages with 2,000 daily messages, at the
+cost of holding every event until the day boundary.
+
+`make experiment ARGS="notify:quiet-hours"` spread 240 events across 24 UTC
+hours with quiet hours 22:00–08:00. The per-hour table is in the experiment
+output; the totals were 140 immediate deliveries and 100 deferred deliveries,
+with an average deferred delay of 5.4 hours and a maximum of 10 hours. The
+window is exclusive at the end: 08:00 is allowed.
+
+`make benchmark ARGS="notification --repetitions=3"` medians:
+
+| benchmark | iterations | median ms | ops/sec |
+|---|---:|---:|---:|
+| preference lookup | 100,000 | 9.257 | 10,802,149 |
+| dedup new key | 100,000 | 21.381 | 4,677,113 |
+| dedup duplicate | 100,000 | 14.713 | 6,796,826 |
+| quiet hours contains | 100,000 | 10.086 | 9,915,102 |
+| digest add | 20,000 | 4.533 | 4,412,089 |
+| notify one channel | 20,000 | 26.207 | 763,142 |
+| notify three channels | 20,000 | 53.702 | 372,426 |
+| notify duplicate | 100,000 | 127.227 | 785,996 |
+
+The one-channel and three-channel planning benchmarks differ by roughly the
+fan-out factor. The duplicate path still pays the preference lookup and one
+dedup claim per channel, so suppression is cheaper than planning but not free.
+

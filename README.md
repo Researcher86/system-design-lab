@@ -34,7 +34,7 @@ make scenario                                # the one end-to-end flow
 make benchmark ARGS="demo"                   # text report with environment
 ```
 
-Chapters 01 and 02 are runnable as well:
+Chapters 01, 02 and 03 are runnable as well:
 
 ```bash
 make experiment ARGS="rate:burst"
@@ -47,6 +47,12 @@ make experiment ARGS="shorten:space"
 make experiment ARGS="shorten:idempotency"
 make experiment ARGS="shorten:memory"
 make benchmark ARGS="url-shortener --repetitions=5"
+
+make experiment ARGS="notify:fanout"
+make experiment ARGS="notify:dedup"
+make experiment ARGS="notify:digest"
+make experiment ARGS="notify:quiet-hours"
+make benchmark ARGS="notification --repetitions=5"
 ```
 
 Open a shell in the same container with `make shell`; stop it with `make down`.
@@ -70,7 +76,7 @@ The order is fixed by the book. Implementation follows the same order.
 |---|---|---|---|
 | 01 | Rate Limiter | token bucket, fixed window, sliding log and sliding counter under the same request stream | ✅ code and measurements |
 | 02 | URL Shortener | base62 identifiers, sequential, random and hashed generation, collisions and idempotency | ✅ code and measurements |
-| 03 | Notification Service | preferences, deduplication, quiet hours, fan-out and digest batching | ⏳ planned |
+| 03 | Notification Service | preferences, deduplication, quiet hours, fan-out and digest batching | ✅ code and measurements |
 | 04 | Job Queue | priority and delay, leases, visibility timeouts, retries and dead letters | ⏳ planned |
 | 05 | Distributed Cache | consistent hashing, LRU nodes, replication and failure fallback | ⏳ planned |
 | 06 | Webhook Delivery | HMAC signatures, retries, circuit breaking, idempotency and dead letters | ⏳ planned |

@@ -378,6 +378,43 @@ needs collision handling, why idempotency is a second index rather than a free
 property, and why the retry budget is part of the service contract. Deferred to
 the book phase.
 
+### Phase 4 — Chapter 03: Notification Service — code and measurements complete
+
+**Status (2026-10-27):** implementation, tests, experiments and benchmark
+suite are complete.
+
+**Code:** `src/Notification/` contains `Channel`, `UserPreferences`,
+`PreferenceStore`/`InMemoryPreferenceStore`, `QuietHours`,
+`DedupStore`/`InMemoryDedupStore`, `DigestBuffer`, `Notification`,
+`NotificationService`, `NotificationResult`, `Delivery`, `DeliveryStatus` and
+`Digest`. The service resolves preferences, claims a dedup key per channel,
+defers non-urgent messages in quiet hours, batches them in digest mode, and
+returns a plan. Urgent messages bypass quiet hours and digest, not dedup.
+
+**Expected complexity:** O(channels) per event for planning;
+O(1) expected per preference and dedup lookup; digest storage O(events) until
+the day boundary. Quiet hours are O(1); a deferred message does not sleep.
+
+**Experiments:** `notify:fanout` at one, two and three channels;
+`notify:dedup` inside and after a TTL; `notify:digest` against immediate
+delivery; `notify:quiet-hours` across a 24-hour window.
+
+**Result:** 176 tests pass. Fan-out turned 10,000 events into 10,000, 20,000
+and 30,000 channel intents as each channel was enabled. Deduplication sent
+20,000 unique messages, suppressed 10,000 duplicate intents inside the TTL and
+delivered 10,000 again after it expired, retaining 20,000 keys (one per event
+and channel). Digest mode replaced 20,000 immediate messages with 2,000 daily
+messages, 10 items per message. Quiet hours 22:00–08:00 deferred 100 of 240
+events, with an average deferred delay of 5.4 hours and a maximum of 10 hours.
+The development benchmark put preference lookup at 9.257 ms, dedup new key at
+21.381 ms, dedup duplicate at 14.713 ms, quiet-hours check at 10.086 ms,
+digest add at 4.533 ms, one-channel planning at 26.207 ms and three-channel
+planning at 53.702 ms for the stated iteration counts.
+
+**Book:** one event is not one message; dedup is per channel; quiet hours
+defer instead of dropping; digest trades latency for message count; urgent is
+not a licence to duplicate. Deferred to the book phase.
+
 ---
 
 ## 9. Phase 9 — Integration scenario

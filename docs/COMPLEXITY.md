@@ -37,6 +37,15 @@ fill target. Idempotency turned 50,000 submissions into 7,172 rows, but the
 tenant + URL index cost 146.3 bytes/link on top of the code index — the
 duplicate suppression is bought with memory, not assumed.
 
+Chapter 03 makes the notification row concrete. Ten thousand events became
+30,000 channel intents with three channels, so fan-out cost is events ×
+channels. Deduplication suppressed 10,000 duplicate intents inside a 60,000 ms
+TTL but delivered them again after it expired; the store held one key per
+event and channel, not one per attempt. Digest mode replaced 20,000 immediate
+messages with 2,000 daily messages, moving the cost from message count to
+retained events. Quiet hours deferred 100 of 240 events, with an average
+5.4-hour delay: the message is delayed, not removed.
+
 ## What is not claimed
 
 - No universal time complexity for PHP arrays or the engine allocator.
