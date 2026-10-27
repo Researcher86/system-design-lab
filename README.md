@@ -34,7 +34,7 @@ make scenario                                # the one end-to-end flow
 make benchmark ARGS="demo"                   # text report with environment
 ```
 
-Chapters 01–05 are runnable as well:
+Chapters 01–06 are runnable as well:
 
 ```bash
 make experiment ARGS="rate:burst"
@@ -65,6 +65,13 @@ make experiment ARGS="cache:hit-ratio"
 make experiment ARGS="cache:failure"
 make experiment ARGS="cache:balance"
 make benchmark ARGS="distributed-cache --repetitions=5"
+
+make experiment ARGS="webhook:retry"
+make experiment ARGS="webhook:duplicates"
+make experiment ARGS="webhook:fanout"
+make experiment ARGS="webhook:signature"
+make experiment ARGS="webhook:circuit"
+make benchmark ARGS="webhook --repetitions=5"
 ```
 
 Open a shell in the same container with `make shell`; stop it with `make down`.
@@ -91,7 +98,7 @@ The order is fixed by the book. Implementation follows the same order.
 | 03 | Notification Service | preferences, deduplication, quiet hours, fan-out and digest batching | ✅ code and measurements |
 | 04 | Job Queue | priority and delay, leases, visibility timeouts, retries and dead letters | ✅ code and measurements |
 | 05 | Distributed Cache | consistent hashing, LRU nodes, replication and failure fallback | ✅ code and measurements |
-| 06 | Webhook Delivery | HMAC signatures, retries, circuit breaking, idempotency and dead letters | ⏳ planned |
+| 06 | Webhook Delivery | HMAC signatures, retries, circuit breaking, idempotency and dead letters | ✅ code and measurements |
 | 07 | Search Engine | inverted index, BM25 ranking, prefix lookup and shard fan-out | ⏳ planned |
 
 ## The MVP scenario

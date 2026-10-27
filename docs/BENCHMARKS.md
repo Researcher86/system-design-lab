@@ -444,3 +444,105 @@ pays a scan of 20 nodes for every key. The cluster read adds the placement
 call, the node lookup and the counter updates on top of the LRU hit. A
 replicated put writes two nodes, so it is not expected to match a single-node
 put.
+
+### Chapter 06 — Webhook delivery
+
+Development run in Docker on macOS (aarch64, PHP 8.5.11, OPcache CLI off, JIT
+off, Xdebug off, Zend MM). The environment block reported git `7147c4f`
+because the chapter 06 tree was uncommitted at measurement time. These are
+relative observations, not universal constants.
+
+`make experiment ARGS="webhook:retry"` sent 1,000 events with a four-attempt
+budget and a 100 ms base delay. Every third delivery failed once, every third
+failed twice, and every tenth failed forever:
+
+| metric | value |
+|---|---:|
+| delivered | 900 |
+| dead-lettered | 100 |
+| attempts | 2,200 |
+| failures | 1,300 |
+| retries | 1,200 |
+| total retry delay | 190,000 ms |
+| simulated time | 700 ms |
+| endpoint requests | 2,200 |
+| processed ids | 900 |
+
+A retry is another attempt of the same delivery. The 900 successful deliveries
+left 900 processed ids; the 100 permanent failures exhausted four attempts and
+entered the dead-letter list. The total delay is the sum of scheduled waits,
+not wall-clock time.
+
+`make experiment ARGS="webhook:duplicates"` compared a clean response with a
+response lost after the endpoint performed the side effect:
+
+| mode | attempts | unique effects | duplicate suppressed | retries | replays rejected | delivered | dead-lettered |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| clean response | 10,000 | 10,000 | 0 | 0 | 10,000 | 10,000 | 0 |
+| lost response | 20,000 | 10,000 | 10,000 | 10,000 | 10,000 | 10,000 | 0 |
+
+The lost response doubled HTTP attempts without doubling side effects. The
+endpoint keyed the effect by the stable delivery id; the worker's processed-id
+store rejected the replay of every completed event. This is at-least-once
+delivery plus an idempotent receiver, not exactly-once delivery.
+
+`make experiment ARGS="webhook:fanout"` sent 10,000 events to 50 subscriptions
+with three event types:
+
+| event type | events | interested subscriptions | deliveries | deliveries/event |
+|---|---:|---:|---:|---:|
+| link.created | 3,334 | 25 | 83,350 | 25.00 |
+| link.clicked | 3,333 | 17 | 56,661 | 17.00 |
+| link.deleted | 3,333 | 24 | 79,992 | 24.00 |
+| total | 10,000 | 50 | 220,003 | 22.00 |
+
+The fan-out factor is the number of interested subscriptions, not the number
+of registered ones. Filtering by event type cuts volume, but a broad
+subscription still multiplies every downstream signature, attempt and retry.
+
+`make experiment ARGS="webhook:signature"` ran 10,000 checks per scenario
+against a valid `t=...,v1=...` signature:
+
+| scenario | checks | accepted | rejected |
+|---|---:|---:|---:|
+| valid | 10,000 | 10,000 | 0 |
+| tampered body | 10,000 | 0 | 10,000 |
+| wrong secret | 10,000 | 0 | 10,000 |
+| stale timestamp | 10,000 | 0 | 10,000 |
+| future timestamp | 10,000 | 0 | 10,000 |
+| malformed header | 10,000 | 0 | 10,000 |
+
+The digest covers the timestamp and the exact payload bytes. A correct digest
+with a stale timestamp is still rejected. The timestamp bounds the replay
+window; it does not by itself make the receiver idempotent.
+
+`make experiment ARGS="webhook:circuit"` sent 100 events into a 5,000 ms
+outage with a six-attempt budget:
+
+| mode | attempts | down attempts | opens | deferred | delivered | dead-lettered | time |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| no circuit | 600 | 600 | 0 | 0 | 0 | 100 | 3,100 ms |
+| circuit | 113 | 14 | 10 | 994 | 99 | 1 | 5,000 ms |
+
+Without a breaker every delivery spent all six attempts before the endpoint
+returned; the recovery at 5,000 ms came too late. With a breaker only 14
+attempts reached the down endpoint; 994 due checks were deferred without
+consuming an attempt, and 99 of 100 deliveries survived. The one dead letter
+was the delivery that carried the failed probes.
+
+`make benchmark ARGS="webhook --repetitions=3"` medians:
+
+| benchmark | iterations | median ms | ops/sec |
+|---|---:|---:|---:|
+| sign | 100,000 | 199.366 | 501,591 |
+| verify | 100,000 | 228.754 | 437,150 |
+| dispatch 1 | 20,000 | 15.113 | 1,323,346 |
+| dispatch 10 | 10,000 | 44.474 | 224,850 |
+| breaker allow closed | 100,000 | 11.490 | 8,703,063 |
+| breaker reject open | 100,000 | 12.747 | 7,844,829 |
+| worker deliver success | 20,000 | 88.376 | 226,307 |
+
+Signing and verification are dominated by HMAC-SHA256 and string work, not by
+the PHP object graph. Dispatch cost grows with the number of matching
+subscriptions. A successful worker delivery includes the signature, the
+transport call, the circuit update, the processed-id mark and the counters.

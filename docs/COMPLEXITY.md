@@ -73,6 +73,21 @@ empty primary. With one virtual node per physical node, the busiest node held
 25.1% of keys and one node held none, which is why the ring's balance is a
 memory-for-variance trade-off rather than a free property.
 
+Chapter 06 makes the webhook row concrete. Ten thousand events and 50
+subscriptions produced 220,003 deliveries because 25, 17 and 24 subscriptions
+wanted the three event types; fan-out is events × interested subscriptions,
+not events × registered subscriptions. A four-attempt retry run spent 2,200
+attempts and 190,000 ms of scheduled delay to deliver 900 events and
+dead-letter 100. When the first response was lost after the side effect, the
+endpoint saw 20,000 attempts but performed 10,000 effects: the stable delivery
+id is the idempotency key. During a 5,000 ms outage, six attempts per delivery
+without a breaker produced 600 attempts and 100 dead letters before recovery;
+a breaker produced 113 attempts, 14 of them during the outage, deferred 994
+due checks without spending an attempt, and delivered 99 of 100. HMAC signing
+and verification are O(payload); the breaker is O(1) per check; the worker's
+pending scan is O(pending) per tick, which is the simplification this chapter
+accepts.
+
 ## What is not claimed
 
 - No universal time complexity for PHP arrays or the engine allocator.

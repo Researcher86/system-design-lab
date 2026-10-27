@@ -516,6 +516,65 @@ failure, why an LRU is per node rather than global, and why read repair is a
 cache repopulation strategy rather than a consistency guarantee. Deferred to
 the book phase.
 
+### Phase 7 — Chapter 06: Webhook Delivery — code and measurements complete
+
+**Status (2026-10-27):** implementation, tests, experiments and benchmark
+suite are complete.
+
+**Code:** `src/Webhook/` contains `WebhookEvent`, `Subscription`, `Signer`,
+`CircuitState`, `CircuitBreaker`, `WebhookRequest`, `WebhookResponse`,
+`WebhookTransport`, `WebhookDispatcher`, `WebhookDelivery` and
+`WebhookWorker`. The dispatcher filters subscriptions by tenant and event
+type and creates one delivery per match. The worker signs the exact payload
+with an HMAC over `<timestamp>.<body>`, sends through a transport boundary,
+retries with exponential backoff, rejects duplicate enqueues inside a
+processed-id TTL and moves exhausted deliveries to a dead-letter list. The
+circuit breaker is per endpoint; while open it defers deliveries without
+consuming an attempt, and a half-open probe consumes one.
+
+**Expected complexity:** dispatch is O(subscriptions) per event; signing and
+verification are O(payload); one delivery attempt is O(1) plus the transport.
+The worker scans pending deliveries in `deliverDue()`, so a tick is O(pending)
+rather than heap-ordered; the lab keeps the state visible instead of hiding a
+scheduler. The processed-id store is O(delivered ids) inside its TTL.
+
+**Experiments:** `webhook:retry` for attempts and dead letters,
+`webhook:duplicates` for a lost response and endpoint idempotency,
+`webhook:fanout` for event-type filtering, `webhook:signature` for HMAC
+rejection cases and `webhook:circuit` for an outage that outlasts the retry
+budget with and without a breaker.
+
+**Result:** 330 tests pass. The retry run (1,000 events, four attempts, 100 ms
+base) delivered 900 and dead-lettered 100 through 2,200 attempts, 1,300
+failures and 1,200 retries, with 190,000 ms of scheduled delay over 700 ms of
+simulated time; 900 completed ids were retained. The duplicate run produced
+10,000 requests and 10,000 effects with a clean response, but 20,000 requests
+and still 10,000 effects when the first response was lost: the endpoint
+suppressed 10,000 duplicates by the stable key, the worker retried 10,000
+times, and all 10,000 replayed events were rejected by the processed-id
+store. Fan-out over 10,000 events and 50 subscriptions with three event types
+created 220,003 deliveries (22.0 per event): 83,350 for `link.created` from 25
+interested subscriptions, 56,661 for `link.clicked` from 17, and 79,992 for
+`link.deleted` from 24. The signature experiment accepted all 10,000 valid
+signatures and rejected all 10,000 checks in each of five invalid scenarios:
+tampered body, wrong secret, stale timestamp, future timestamp and malformed
+header. In the circuit run (100 events, a 5,000 ms outage, six attempts),
+without a breaker all 600 attempts hit the down endpoint and all 100
+deliveries dead-lettered by 3,100 ms; with a breaker there were 113 attempts,
+only 14 of them during the outage, 10 opens, 994 deferrals, 99 deliveries, one
+dead letter and recovery at 5,000 ms. The development benchmark put signing at
+199.366 ms for 100,000 operations, verification at 228.754 ms, one-subscription
+dispatch at 15.113 ms for 20,000, ten-subscription dispatch at 44.474 ms for
+10,000, a closed breaker allow at 11.490 ms, an open breaker rejection at
+12.747 ms and a successful worker delivery at 88.376 ms for 20,000.
+
+**Book:** why the signature covers the exact bytes and the timestamp, why
+timestamp validation is not replay protection by itself, why fan-out is
+events × interested subscriptions, why a retry is another attempt of the same
+delivery, why an open circuit defers without spending an attempt, why a
+breaker can save a delivery that the retry budget alone would kill, and why
+the receiver needs an idempotency key. Deferred to the book phase.
+
 ---
 
 ## 9. Phase 9 — Integration scenario

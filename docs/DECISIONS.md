@@ -176,3 +176,50 @@ expected per operation and one array entry per value, with no linked list and
 no second index. The trade-off is that the implementation relies on PHP's
 ordered hash map; a language without that property would need an explicit
 list. The benchmark measures this implementation, not an abstract LRU.
+
+## 2026-10-27 — Sign the timestamp and the exact payload bytes
+
+`Signer` signs `<timestampMs>.<payload>` with HMAC-SHA256 and emits
+`t=...,v1=...`. The payload is already serialized, so verification covers the
+same bytes that were sent; the lab does not re-encode JSON after signing. The
+timestamp is checked against a tolerance before the digest comparison, which
+bounds replay without pretending to solve it. The cost is that every producer
+and consumer must agree on the serialization; the benefit is that a signature
+cannot be moved to a different body or a different time.
+
+## 2026-10-27 — At-least-once plus idempotency, again
+
+A delivery id is stable across attempts and is sent as the idempotency key.
+The worker rejects a duplicate enqueue while the delivery is active or inside
+the processed-id TTL, and the simulated receiver keys its side effect by the
+same id. The lost-response experiment is the proof obligation: 20,000 HTTP
+attempts produced 10,000 effects. The lab does not claim exactly-once
+delivery; it claims that the receiver can make the duplicate harmless.
+
+## 2026-10-27 — A circuit open defers without consuming an attempt
+
+`WebhookWorker` asks the per-endpoint breaker before signing and sending. If
+the breaker is open, the delivery is rescheduled for the end of the cooldown
+and its attempt counter does not move. This is what lets a delivery survive an
+outage that is longer than its retry budget: the no-circuit arm dead-lettered
+all 100 events by 3,100 ms, while the circuit arm still delivered 99 after the
+5,000 ms recovery. A half-open probe is a real send and does consume an
+attempt, so a permanently failing endpoint still reaches the dead-letter list.
+
+## 2026-10-27 — Webhook fan-out is filtered by tenant and event type
+
+`WebhookDispatcher` creates one delivery per subscription whose tenant matches
+and whose event-type list contains the event, with an empty list meaning all
+types. A subscription is not a global broadcast: the measured fan-out was
+22.0 deliveries per event across 50 subscriptions because only subsets wanted
+each type. The filter is applied before signing or queueing, so an uninterested
+subscription costs nothing downstream.
+
+## 2026-10-27 — The worker owns its retry state, the queue supplies the policy
+
+The webhook worker reuses `ExponentialBackoff` and `ProcessedJobStore` from the
+queue chapter but not `JobQueue` itself. A queue lease has no concept of
+"defer because the endpoint's circuit is open without spending an attempt",
+and the breaker is per endpoint rather than per job. The webhook state machine
+is small enough to keep explicit; the cost is a second retry implementation,
+and the benefit is that the circuit semantics are not smuggled into the queue.
