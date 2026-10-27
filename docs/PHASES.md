@@ -707,7 +707,11 @@ Deferred to the book phase.
 - GitHub release notes with chapters, scenario, checks and environment.
 - README and this journal updated with the tag and final numbers.
 
-Status: ⏳ planned.
+Status: ✅ complete (2026-10-27). The annotated tag `v1.0.0` points at
+`aa115e1`; the GitHub release is
+[`v1.0.0`](https://github.com/Researcher86/system-design-lab/releases/tag/v1.0.0).
+Final benchmark timings were recorded in `0a2663a`; CI run `40497704699` for
+that commit is green.
 
 ---
 
@@ -718,7 +722,11 @@ failure modes, verification, numbers, exercises and a link to the next
 chapter. Code blocks are copied from the tagged source and checked
 mechanically.
 
-Status: ⏳ planned.
+Status: ✅ complete (2026-10-27). The chapters live in
+[`engineering-lab-book/system-design-lab`](https://github.com/Researcher86/engineering-lab-book/tree/master/system-design-lab),
+commit `4c4d9c8`. Book CI run `40499796271` is green: 7 chapters, 88 code
+blocks, 53 linked blocks matched exactly, 53 GitHub links resolved and 7 local
+README links resolved.
 
 ---
 
