@@ -90,3 +90,42 @@ deduplicating by scanning or accepting duplicate rows — moves the cost to
 latency or storage. The lab keeps the explicit index and reports it; a
 production store would move both indexes to a database and measure pages, not
 hash buckets.
+
+## 2026-10-27 — Delayed jobs live in a separate heap
+
+A job that is not due yet must not sit at the front of the ready heap. If both
+states shared one heap, a high-priority job scheduled for tomorrow would block
+every lower-priority job that is due now. `JobQueue` therefore keeps a ready
+heap ordered by priority and FIFO sequence and a delayed heap ordered by
+availability; `lease()` promotes due jobs first. The cost is a promotion step
+and a second heap; the benefit is that priority means priority among work that
+can actually run, not among all known work.
+
+## 2026-10-27 — An expired lease consumes an attempt
+
+A crashed worker and a failed worker both spend one attempt. When a visibility
+timeout expires, the job returns to the ready heap immediately and its attempt
+counter is not rolled back; if it was the last attempt, the job is
+dead-lettered. The alternative — treating a crash as a free retry — turns a
+poison job that kills its worker into an infinite redelivery loop. The cost is
+that a worker which is merely slow can cause a duplicate execution, which is
+exactly why the chapter models at-least-once delivery and idempotent handlers
+instead of promising exactly-once.
+
+## 2026-10-27 — Duplicate enqueue is bounded by a TTL
+
+`JobQueue` refuses a job id that is currently active or was completed inside
+the `ProcessedJobStore` TTL. This catches the common retry-at-the-producer
+duplicate without a permanent seen-set that grows with every job ever run. The
+trade-off is explicit: after the TTL a replay is accepted again, and the store
+must be cleaned. A production queue would put deduplication in the broker or a
+database with the same TTL question.
+
+## 2026-10-27 — Priority is strict, fairness is not modeled
+
+The ready heap breaks ties by arrival sequence and otherwise orders strictly by
+priority; the experiment records zero inversions. Strict priority can starve
+the tail under a continuous high-priority stream, and the lab says so instead
+of hiding it. Aging, weighted fair queueing and per-tenant quotas are the
+usual remedies; they are listed as stretch work, not implemented as if the
+strict heap were fair.

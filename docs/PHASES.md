@@ -415,6 +415,54 @@ planning at 53.702 ms for the stated iteration counts.
 defer instead of dropping; digest trades latency for message count; urgent is
 not a licence to duplicate. Deferred to the book phase.
 
+### Phase 5 — Chapter 04: Job Queue — code and measurements complete
+
+**Status (2026-10-27):** implementation, tests, experiments and benchmark
+suite are complete.
+
+**Code:** `src/Queue/` contains `Job`, `Lease`, `ExponentialBackoff`,
+`ProcessedJobStore`, `FailureStatus`, `FailureOutcome` and `JobQueue`. The
+queue keeps three heaps — ready by priority and FIFO, delayed by availability,
+and arrivals for backlog age — plus a lease map and an active-job set. A
+delayed job is not in the ready heap, so a high-priority job that is not due
+yet cannot block a lower-priority job that is due now. `lease()` releases
+expired leases, promotes due jobs and extracts the highest-priority ready job.
+Delivery is at-least-once; a stale completion or failure is rejected; a job
+that exhausts its attempts leaves through the dead-letter list.
+
+**Expected complexity:** enqueue, lease, retry and promotion are O(log n) on
+the heaps; the expiration sweep is O(active leases) per call and the arrival
+heap is cleaned lazily. Memory is O(ready + delayed + leased + retained
+processed ids). The idempotency store retains one completed id per job until
+its TTL.
+
+**Experiments:** `queue:retry` over a mixed failing stream,
+`queue:leases` with crashing workers, `queue:priority` across five levels and
+`queue:backlog` with a producer faster than the consumer.
+
+**Result:** 220 tests pass. Retry run: 1,000 jobs with a three-attempt budget,
+every fifth job failing permanently, produced 800 completions and 200 dead
+letters through 2,199 lease attempts, 1,399 failures and 1,199 retries; the
+total retry delay was 166,500 ms, the replayed completed id was rejected and
+the processed store held 800 ids. Lease run: 1,000 jobs, four workers, a
+500 ms visibility timeout and a crash every third lease produced 963
+completions and 37 dead letters through 1,444 leases, 481 expirations and 444
+redeliveries; peak concurrency stayed at four and 90,625 ms of simulated time
+passed. Priority run: five levels of 200 jobs were leased strictly by
+descending priority, with average waits from 995 ms for the highest level to
+8,995 ms for the lowest and zero inversions. Backlog run: producing 100 and
+completing 80 jobs per 1,000 ms tick over 100 ticks left 2,000 jobs at depth
+and the oldest job at 19,000 ms, with 10,000 produced and 8,000 consumed. The
+development benchmark put enqueue-ready at 12.494 ms for 10,000 operations,
+enqueue-delayed at 7.653 ms, the enqueue-lease-complete round trip at 30.512 ms
+for 20,000, enqueue-lease-fail at 15.678 ms, promote-due at 10.706 ms and
+oldest-pending at 12.993 ms for 100,000.
+
+**Book:** why a lease is not a lock, why an expired lease consumes an attempt,
+why the delayed heap is separate from the ready heap, why priority without
+aging can starve the tail, and why a backlog is measured by age as well as
+depth. Deferred to the book phase.
+
 ---
 
 ## 9. Phase 9 — Integration scenario

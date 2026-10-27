@@ -46,6 +46,19 @@ messages with 2,000 daily messages, moving the cost from message count to
 retained events. Quiet hours deferred 100 of 240 events, with an average
 5.4-hour delay: the message is delayed, not removed.
 
+Chapter 04 makes the queue row concrete. A 1,000-job retry run with a
+three-attempt budget spent 2,199 lease attempts, 1,399 reported failures and
+1,199 retries to produce 800 completions and 200 dead letters; the retry delay
+doubled from 100 ms and totalled 166,500 ms of simulated time. With four
+workers and a 500 ms visibility timeout, crashing on every third lease took
+1,444 leases and 481 expirations for 963 completions: an expired lease is a
+redelivery and consumes an attempt, so a crash is not a free retry. Five
+priority levels of 200 jobs were leased without a single inversion, but the
+lowest level waited behind every higher one — the heap is correct, not fair.
+A producer of 100 jobs per tick against a consumer of 80 left 2,000 jobs at
+depth and the oldest job 19,000 ms old after 100 ticks, so depth alone would
+understate the latency.
+
 ## What is not claimed
 
 - No universal time complexity for PHP arrays or the engine allocator.

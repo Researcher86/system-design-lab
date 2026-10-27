@@ -259,3 +259,95 @@ The one-channel and three-channel planning benchmarks differ by roughly the
 fan-out factor. The duplicate path still pays the preference lookup and one
 dedup claim per channel, so suppression is cheaper than planning but not free.
 
+
+### Chapter 04 — Job queue
+
+Development run in Docker on macOS (aarch64, PHP 8.5.11, OPcache CLI off, JIT
+off, Xdebug off, Zend MM). The environment block reported git `4070dc5`
+because the chapter 04 tree was uncommitted at measurement time. These are
+relative observations, not universal constants.
+
+`make experiment ARGS="queue:retry"` drove 1,000 jobs with a three-attempt
+budget; every fifth job failed permanently:
+
+| metric | value |
+|---|---:|
+| completed | 800 |
+| dead-lettered | 200 |
+| lease attempts | 2,199 |
+| failures | 1,399 |
+| retries | 1,199 |
+| total retry delay | 166,500 ms |
+| replayed completed id rejected | yes |
+| processed ids | 800 |
+
+A retry is a lease attempt of the same job, not a new enqueue. The delay
+doubles from 100 ms and is capped at 10,000 ms. A job that survives all
+attempts is completed once; a permanent failure is counted once in the
+dead-letter list, after every attempt has been spent.
+
+`make experiment ARGS="queue:leases"` ran 1,000 jobs on four workers with a
+500 ms visibility timeout and a crash on every third lease:
+
+| metric | value |
+|---|---:|
+| completed | 963 |
+| dead-lettered | 37 |
+| lease attempts | 1,444 |
+| expired leases | 481 |
+| redeliveries | 444 |
+| peak concurrent leases | 4 |
+| simulated time | 90,625 ms |
+| still active | 0 |
+
+A crashed worker never reports failure. The queue sees the job again only when
+the visibility timeout expires, and the expiration consumes an attempt. A job
+that crashes on its last attempt is dead-lettered on expiry. The lease budget
+bounds concurrency; it does not make delivery exactly-once.
+
+`make experiment ARGS="queue:priority"` enqueued 200 jobs at each of five
+priority levels before leasing:
+
+| priority | jobs | first lease | last lease | average wait |
+|---:|---:|---:|---:|---:|
+| 4 | 200 | 1 | 200 | 995 ms |
+| 3 | 200 | 201 | 400 | 2,995 ms |
+| 2 | 200 | 401 | 600 | 4,995 ms |
+| 1 | 200 | 601 | 800 | 6,995 ms |
+| 0 | 200 | 801 | 1,000 | 8,995 ms |
+
+The ready heap produced zero priority inversions: every level finished before
+the next one started. A static batch cannot show starvation; a continuous
+high-priority stream could hold the tail forever, which is why aging or fair
+queueing exists.
+
+`make experiment ARGS="queue:backlog"` produced 100 and completed 80 jobs per
+1,000 ms tick for 100 ticks:
+
+| tick | produced | consumed | depth | oldest age |
+|---:|---:|---:|---:|---:|
+| 0 | 100 | 80 | 20 | 0 ms |
+| 50 | 5,100 | 4,080 | 1,020 | 10,000 ms |
+| 99 | 10,000 | 8,000 | 2,000 | 19,000 ms |
+
+Depth grows by the producer–consumer difference per tick. Age is the second
+half of the diagnosis: the same depth with a fast drain is a burst, while this
+run keeps the oldest job waiting for 19 seconds. With consumer ≥ producer the
+same queue drains instead of growing.
+
+`make benchmark ARGS="job-queue --repetitions=3"` medians:
+
+| benchmark | iterations | median ms | ops/sec |
+|---|---:|---:|---:|
+| enqueue ready | 10,000 | 12.494 | 800,379 |
+| enqueue delayed | 10,000 | 7.653 | 1,306,620 |
+| enqueue lease complete | 20,000 | 30.512 | 655,491 |
+| enqueue lease fail | 10,000 | 15.678 | 637,826 |
+| promote due | 10,000 | 10.706 | 934,041 |
+| oldest pending | 100,000 | 12.993 | 7,696,550 |
+
+The delayed enqueue is cheaper than the ready enqueue in this run because the
+delayed heap does not compete with promotions; the round trip pays for the
+lease map, the priority queue extraction and the processed-id mark. The
+`oldest pending` benchmark reads a heap top after the completed jobs have been
+popped lazily, so it mostly measures the method call rather than a scan.
