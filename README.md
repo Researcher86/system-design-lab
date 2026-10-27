@@ -34,7 +34,7 @@ make scenario                                # the one end-to-end flow
 make benchmark ARGS="demo"                   # text report with environment
 ```
 
-Chapters 01–06 are runnable as well:
+Chapters 01–07 are runnable as well:
 
 ```bash
 make experiment ARGS="rate:burst"
@@ -72,6 +72,12 @@ make experiment ARGS="webhook:fanout"
 make experiment ARGS="webhook:signature"
 make experiment ARGS="webhook:circuit"
 make benchmark ARGS="webhook --repetitions=5"
+
+make experiment ARGS="search:index"
+make experiment ARGS="search:ranking"
+make experiment ARGS="search:prefix"
+make experiment ARGS="search:shards"
+make benchmark ARGS="search-engine --repetitions=5"
 ```
 
 Open a shell in the same container with `make shell`; stop it with `make down`.
@@ -99,7 +105,12 @@ The order is fixed by the book. Implementation follows the same order.
 | 04 | Job Queue | priority and delay, leases, visibility timeouts, retries and dead letters | ✅ code and measurements |
 | 05 | Distributed Cache | consistent hashing, LRU nodes, replication and failure fallback | ✅ code and measurements |
 | 06 | Webhook Delivery | HMAC signatures, retries, circuit breaking, idempotency and dead letters | ✅ code and measurements |
-| 07 | Search Engine | inverted index, BM25 ranking, prefix lookup and shard fan-out | ⏳ planned |
+| 07 | Search Engine | inverted index, BM25 ranking, prefix lookup and shard fan-out | ✅ code and measurements |
+
+Search is one process with an explicit shard fan-out. It does not implement a
+network protocol, replication, segment merges, updates, deletes or a real
+analyzer; the measured shard-local score drift is documented rather than
+hidden.
 
 ## The MVP scenario
 

@@ -575,6 +575,63 @@ delivery, why an open circuit defers without spending an attempt, why a
 breaker can save a delivery that the retry budget alone would kill, and why
 the receiver needs an idempotency key. Deferred to the book phase.
 
+### Phase 8 — Chapter 07: Search Engine — code and measurements complete
+
+**Status (2026-10-27):** implementation, tests, experiments and benchmark
+suite are complete.
+
+**Code:** `src/Search/` contains `SearchDocument`, `Tokenizer`, `PrefixIndex`,
+`InvertedIndex`, `Bm25Ranker`, `SearchHit`, `RankedResults`, `SearchResponse`
+and `SearchCluster`. `Corpus` is deterministic experiment input, not part of
+the engine. The tokenizer lowercases and splits on non-alphanumerics; the index
+stores term-to-document frequencies, document lengths and a lazy sorted
+prefix dictionary. `SearchCluster` routes a document by
+`Hashers::index($document->id, $shardCount)`, tokenizes a query once, asks
+every shard for its top-k, merges by score and document id, and merges prefix
+ranges by term. Counters record documents indexed, shard queries, postings
+scanned, candidates scored, results returned and prefix rebuilds.
+
+**Expected complexity:** indexing is O(tokens) per document. A query scans the
+postings of every query term in every shard and sorts candidates; the
+shard-local top-k is O(candidates log candidates) and the merge is
+O(shards × top-k log(shards × top-k)). Prefix completion rebuilds a sorted
+dictionary in O(T log T) on the first query after a write, then costs
+O(log T + returned terms) per shard. Fan-out multiplies the number of shard
+requests, not necessarily the total postings.
+
+**Experiments:** `search:index` for tokens, postings, dictionary and PHP
+memory; `search:ranking` for rare, common and mixed queries against raw-TF and
+BM25 `b=0` baselines; `search:prefix` for lazy rebuilds and exact merged
+completions; `search:shards` for fan-out cost and ranking drift against a
+single global index.
+
+**Result:** 385 tests and 19,011 assertions pass. The index experiment held
+5,000 documents, 412,539 tokens, 274,611 postings and 22,528 dictionary terms;
+the corpus used 8.1 MiB and the index added 25.1 MiB (5,273.8 bytes per
+document) of PHP allocator memory. A rare topic term had document frequency 17
+and scanned 20.3 postings on average; the common `word00001` was in 2,000 of
+2,000 documents and scanned 772.1 postings, with only 1.3% of candidates
+surviving into top-10. The prefix dictionary held 14,864 terms in one index but
+26,953 entries summed over four shards; the first query rebuilt one list
+versus four, the second rebuilt none, and both merged to the same 999 terms
+and ten completions. Splitting the same 2,000 documents into two, four and
+eight shards kept postings and candidates at 384.0 and 380.3 per query, but
+recall@10 against the global index fell from 100% to 79.5%/84.0%,
+67.4%/75.2% and 64.8%/69.3% for the rare and mixed shapes. The development
+benchmark put 100,000 tokenizations at 47.631 ms, a rare BM25 query at
+166.622 ms for 20,000, a common BM25 query at 3,279.210 ms for 2,000, prefix
+completion at 150.727 ms for 100,000 and a four-shard rare query at 137.961 ms
+for 10,000.
+
+**Book:** why an inverted index stores postings rather than documents, why
+BM25's IDF and length normalization change the order, why a broad term is
+expensive before any ranking happens, why the prefix dictionary is rebuilt
+lazily and what a write invalidates, why sharding keeps total postings but
+multiplies shard requests, and why shard-local statistics make scores
+incomparable. The book must state that there is no stemming, stop-word list,
+phrase search, update, delete, replication, network or segment merge.
+Deferred to the book phase.
+
 ---
 
 ## 9. Phase 9 — Integration scenario

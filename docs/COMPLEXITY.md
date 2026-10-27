@@ -26,7 +26,7 @@ Filled in as the chapters land.
 | Job queue | enqueue/lease O(log n); retry O(log n) | queue depth, retries, expired leases | a producer faster than the consumer grows an unbounded backlog |
 | Distributed cache | ring lookup O(log V); rendezvous O(nodes) | hits, misses, remapped keys, fallbacks | one failed node is still a full cache miss for RF=1 keys |
 | Webhook | O(subscriptions) fan-out; retry O(attempts) | attempts, circuit opens, dead letters | a retry storm consumes the same capacity as the original load |
-| Search | index O(tokens); query O(postings + ranking) | postings scanned, terms, shard queries | a broad term scans a large fraction of the index |
+| Search | index O(tokens); query O(postings + ranking) | postings scanned, terms, shard queries | a broad term scans a large fraction of the index; shard-local statistics change the ranking |
 
 Chapter 02 makes the shortener row concrete. At 20,000 links in a 238,328-code
 space, random and hashed generators recorded 878 and 881 failed draws against
@@ -88,6 +88,25 @@ and verification are O(payload); the breaker is O(1) per check; the worker's
 pending scan is O(pending) per tick, which is the simplification this chapter
 accepts.
 
+Chapter 07 makes the search row concrete. At 5,000 documents and about 80 body
+terms each, the index held 412,539 tokens, 274,611 term-document pairs and
+22,528 dictionary terms. The corpus took 8.1 MiB of PHP allocator memory and
+the index added 25.1 MiB, or 5,273.8 bytes per document. A rare topic term had
+document frequency 17; the most common vocabulary term was present in 2,000 of
+2,000 documents. The rare query scanned 20.3 postings on average and returned
+10 results from a candidate set of 20.3, so 49.2% of candidates survived into
+top-k. The common query scanned 772.1 postings and only 1.3% of its candidates
+survived: a broad term pays to score almost the whole index for the same ten
+answers. Fan-out kept the total postings scanned at 384.0 and candidates at
+380.3 for one, two, four and eight shards, but each query became two, four or
+eight shard requests. Shard-local BM25 statistics also changed the order:
+recall@10 against the global index fell from 100% at one shard to 79.5%/84.0%
+at two, 67.4%/75.2% at four and 64.8%/69.3% at eight. The prefix dictionary
+held 14,864 terms in one index but 26,953 entries summed over four shards, and
+the first prefix query rebuilt one sorted list in the single index and four in
+the cluster; the second query rebuilt none. The merged prefix result was exact
+(999 distinct terms on both sides), while the sharded ranking was not.
+
 ## What is not claimed
 
 - No universal time complexity for PHP arrays or the engine allocator.
@@ -98,3 +117,9 @@ accepts.
   latency to backlog and age.
 - No claim that a search index is small: the inverted index trades write and
   storage cost for read speed.
+- No claim that sharded BM25 ranks like a global index: the shard experiment
+  measured the drift, and the lab does not add a global-statistics phase.
+- No claim that the search cluster is distributed: shards live in one process;
+  there is no network, replication, segment merge or failure handling.
+- No claim that the simple analyzer is a production analyzer: it lowercases
+  and splits on non-alphanumerics, with no stemming, stop words or positions.

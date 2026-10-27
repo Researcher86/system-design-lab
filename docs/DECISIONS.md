@@ -223,3 +223,46 @@ queue chapter but not `JobQueue` itself. A queue lease has no concept of
 and the breaker is per endpoint rather than per job. The webhook state machine
 is small enough to keep explicit; the cost is a second retry implementation,
 and the benefit is that the circuit semantics are not smuggled into the queue.
+
+## 2026-10-27 — BM25 statistics are shard-local
+
+Each shard computes document count, average document length and document
+frequency from its own documents. This keeps a shard independent and makes a
+query a fan-out instead of a global statistics broadcast. The cost is measured
+rather than hidden: recall@10 against a single global index fell from 100% at
+one shard to 79.5%/84.0% at two, 67.4%/75.2% at four and 64.8%/69.3% at eight
+for the rare and mixed query shapes. The merge compares raw local scores. A
+production system would need global statistics, score normalization or a
+two-phase retrieval step; the lab has none of those and says so.
+
+## 2026-10-27 — The prefix dictionary is sorted lazily
+
+`PrefixIndex` keeps a hash set of terms and rebuilds a sorted list on the first
+query after a write. A binary search finds the start of the prefix range, then
+the scan stops at the first non-matching term or at the requested limit. The
+first query pays O(T log T); later queries pay O(log T + returned terms).
+A trie would make updates incremental but would add a node per byte and a
+second traversal structure. The lab measures the sorted list: one index rebuilt
+one dictionary on the first query, a four-shard cluster rebuilt four, and a
+second query rebuilt none. Sharding multiplies dictionary entries because a
+term can occur on several shards; the merged completion is still exact.
+
+## 2026-10-27 — The tokenizer splits on everything non-alphanumeric
+
+Lowercasing and splitting is the whole analyzer: no stemming, no stop words,
+no phrase positions and no field boosts. That makes `word-00001` two tokens,
+`word` and `00001`, which the tests state explicitly. The synthetic corpus
+therefore writes `word00001` and `topic0042` as single tokens. This is a
+deliberate simplification: a real analyzer changes the dictionary, the
+postings and the ranking, and pretending otherwise would make the measured
+index look more capable than it is.
+
+## 2026-10-27 — The index stores postings, not documents
+
+`InvertedIndex` keeps term-to-document frequencies, document lengths and a
+dictionary. It does not store titles or bodies, does not support update or
+delete, and has no forward index. A result is a document id and a score; a real
+engine would fetch stored fields from a separate structure. The benefit is
+that the memory number is the index cost, not the corpus cost: at 5,000
+documents the corpus was 8.1 MiB and the index added 25.1 MiB. The absence of
+deletion and segment merges is a known limit, not a hidden feature.

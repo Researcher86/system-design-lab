@@ -546,3 +546,123 @@ Signing and verification are dominated by HMAC-SHA256 and string work, not by
 the PHP object graph. Dispatch cost grows with the number of matching
 subscriptions. A successful worker delivery includes the signature, the
 transport call, the circuit update, the processed-id mark and the counters.
+
+### Chapter 07 — Search engine
+
+Development run in Docker on macOS (aarch64, PHP 8.5.11, OPcache CLI off, JIT
+off, Xdebug off, Zend MM). The environment block reported git `b9104cb`
+because the chapter 07 tree was uncommitted at measurement time. These are
+relative observations, not universal constants. The corpus is synthetic: each
+document has one topic term and a body sampled from a Zipf distribution over a
+fixed vocabulary.
+
+`make experiment ARGS="search:index"` indexed 5,000 documents with a
+20,000-term vocabulary and about 80 body terms per document:
+
+| metric | value |
+|---|---:|
+| tokens | 412,539 |
+| tokens per document | 82.5 |
+| postings (term-document pairs) | 274,611 |
+| postings per document | 54.9 |
+| dictionary terms | 22,528 |
+| average postings per term | 12.2 |
+| input text | 3.9 MiB |
+| PHP memory: corpus | 8.1 MiB |
+| PHP memory: index | 25.1 MiB |
+| PHP memory: total | 33.2 MiB |
+| PHP memory: index per document | 5,273.8 B |
+
+The five most frequent terms were `link` (5,000 documents, 100.0%),
+`word00001` (4,998, 100.0%), `word00002` (4,948, 99.0%), `word00003`
+(4,756, 95.1%) and `word00004` (4,497, 89.9%). A common term is present in
+almost every document, so its document frequency is close to the document
+count. The memory numbers are PHP allocator bytes, not RSS; the index delta is
+measured on top of the live corpus.
+
+`make experiment ARGS="search:ranking"` ran 200 queries per shape against
+2,000 documents, with a ten-result top-k:
+
+| shape | postings | candidates | returned | candidates in top-k | TF overlap | b=0 overlap |
+|---|---:|---:|---:|---:|---:|---:|
+| rare topic term | 20.3 | 20.3 | 10.0 | 49.2% | 52.2% | 52.2% |
+| common term | 772.1 | 772.1 | 10.0 | 1.3% | 49.1% | 49.1% |
+| topic + common | 792.4 | 784.4 | 10.0 | 1.3% | 59.7% | 64.9% |
+
+The example term table was sharper: `topic0000` had document frequency 17,
+`word00001` had 2,000, and the mixed query had a candidate union of 2,000.
+The top-k overlap columns compare BM25 with raw term frequency and with BM25
+`b=0` on the same postings. A single-term query has the same ordering under
+raw TF and `b=0` because both rank by term frequency; the mixed query differs
+because IDF weights the two terms. The overlap is a ranking difference, not a
+relevance judgement: the corpus contains one synthetic topic signal.
+
+`make experiment ARGS="search:prefix"` built one index and a four-shard
+cluster over 2,000 documents and completed the prefix `word00`:
+
+| metric | single index | four shards |
+|---|---:|---:|
+| dictionary entries | 14,864 | 26,953 (sum) |
+| distinct terms with prefix | 999 | 999 |
+| dictionary rebuilds, first query | 1 | 4 |
+| dictionary rebuilds, second query | 0 | 0 |
+| completion results | 10 | 10 |
+
+Both completions returned the same ten terms. The shard dictionary sum is
+larger because a term stored on several shards is counted once per shard; the
+merged prefix count is exact because the ranges are merged by term. A write
+invalidates the sorted list, so the first query after the build rebuilds one
+list per shard and later queries only binary-search it.
+
+`make experiment ARGS="search:shards"` indexed the same 2,000 documents once
+globally and once per shard count. It ran 100 rare-topic queries and 100
+mixed queries per configuration:
+
+| shards | documents per shard | postings/query | candidates/query | shard queries |
+|---:|---:|---:|---:|---:|
+| 1 | 2,000 / 2,000 | 384.0 | 380.3 | 1 |
+| 2 | 991 / 1,009 | 384.0 | 380.3 | 2 |
+| 4 | 481 / 513 | 384.0 | 380.3 | 4 |
+| 8 | 236 / 273 | 384.0 | 380.3 | 8 |
+
+Fan-out does not change the number of postings scanned in this corpus: every
+shard scans its share, and the sum is the global count. What changes is the
+number of shard requests and the ranking:
+
+| shards | rare recall@10 | mixed recall@10 | rare top-1 | mixed top-1 |
+|---:|---:|---:|---:|---:|
+| 1 | 100.0% | 100.0% | 100.0% | 100.0% |
+| 2 | 79.5% | 84.0% | 43.0% | 67.0% |
+| 4 | 67.4% | 75.2% | 22.0% | 44.0% |
+| 8 | 64.8% | 69.3% | 18.0% | 29.0% |
+
+The one-shard cluster is identical to the global index, which is the control.
+With more shards, each shard computes BM25 against its own document count,
+average length and document frequencies, so a score from one shard is not on
+the same scale as a score from another. The merge sorts those local scores
+without normalization, and the result drifts from the global ranking. A
+production cluster needs global statistics, a score-normalization step or a
+two-phase retrieval strategy to address this; the lab measures the problem
+rather than hiding it.
+
+`make benchmark ARGS="search-engine --repetitions=3"` medians:
+
+| benchmark | iterations | median ms | ops/sec |
+|---|---:|---:|---:|
+| tokenize | 100,000 | 47.631 | 2,099,482 |
+| index document | 2,000 | 4.078 | 490,492 |
+| bm25 rare term | 20,000 | 166.622 | 120,032 |
+| bm25 common term | 2,000 | 3,279.210 | 610 |
+| bm25 mixed terms | 2,000 | 3,312.350 | 604 |
+| prefix complete | 100,000 | 150.727 | 663,450 |
+| cluster search 4 rare | 10,000 | 137.961 | 72,484 |
+| cluster search 4 common | 1,000 | 1,344.616 | 744 |
+| cluster index document | 2,000 | 4.828 | 414,215 |
+
+The common-term queries are roughly 20x slower than the rare-term query
+because they score almost the whole index rather than about 20 postings. The
+cluster variant of the common query is slightly faster than the single-index
+variant in this run because each shard sorts a smaller candidate set before
+the merge; the postings are the same. The index and cluster index benchmarks
+grow their indexes during the run, so their memory delta belongs to the
+benchmark, not to a fixed index size.
