@@ -647,7 +647,57 @@ requests → rate limiter → shortener → cache / search
 `make scenario` is the only command needed. The scenario writes a text report
 and a JSON result to `var/results/`.
 
-Status: ⏳ planned.
+### Phase 9 — Integration scenario — code and measurements complete
+
+**Status (2026-10-27):** the scenario, its report writer, its deterministic
+webhook transport and the integration tests are complete.
+
+**Code:** `src/Integration/ShortLinkPlatformScenario.php` composes the seven
+chapters. `ScenarioWebhookTransport` verifies the HMAC signature, performs one
+side effect per idempotency key, reports a lost response on part of the first
+attempts, keeps one endpoint permanently down and counts every attempt.
+`ScenarioReport` writes the same measurements as text and JSON; the experiment
+also registers them with the harness.
+
+**Flow:** a per-tenant token bucket admits a 900-request stream over 10,000 ms.
+Every fifth admitted request creates a link; the rest resolve a catalog code
+through a three-node, replication-factor-2 cache and fall back to the
+repository on a miss. A create indexes the link, calls the notification
+service twice with the same event key, dispatches webhooks, and enqueues one
+job per notification channel and per webhook delivery in one queue. The queue
+drains with three workers; notification jobs fail deterministically every
+seventh job, webhook jobs retry through HMAC-signed requests and the `/down`
+endpoint exhausts its attempts. `cache-1` fails at 60% of the request stream
+and recovers at 80%; lost entries are served by replicas and repaired.
+
+**Invariants:** the report checks 35 relationships before it is written:
+request conservation, admitted work split into creates and resolves, cache
+reads versus resolves and misses versus repository fallbacks, one cache
+failure and recovery, search documents versus catalog plus creates, two
+notification calls per create with three suppressed duplicates, webhook
+fan-out, one HTTP attempt per webhook lease, queue conservation
+(`completed + dead = enqueued`, `failed = retried + dead`), consumer counts,
+processed ids and a fully drained queue. The experiment exits non-zero if any
+invariant fails.
+
+**Result:** 396 tests and 19,062 assertions pass. The default run admitted 807
+of 900 requests (93 denials) and produced 161 creates and 646 resolves. The
+cache served 629 hits and 17 misses (97.4%); failing `cache-1` lost 269
+entries, the replicas served 33 hits and repaired 19 primaries, and the queue
+finished at 10,626 ms of simulated time. Search indexed 461 documents (300
+catalog plus 161 created), answered 10 queries and scanned 461 postings. The
+notification replay suppressed 483 channel deliveries; 414 jobs were delivered
+and 69 dead-lettered. Webhooks created 161 events and 214 deliveries, made 402
+signed attempts with zero invalid signatures, produced 161 effects and
+suppressed 29 duplicate effects; the down endpoint dead-lettered all 53 of its
+deliveries. The queue enqueued 697 jobs, leased 1,092 times, completed 575,
+retried 395 and dead-lettered 122. All 35 invariants passed.
+
+**Book:** the scenario is the composition example that closes the book: it
+shows the same at-least-once contract at the queue, the notification
+deduplication key and the webhook receiver, and it shows why a cache failure
+is a read-path event rather than a data-loss event when replication works.
+Deferred to the book phase.
 
 ---
 

@@ -134,7 +134,10 @@ report: funnel, hit ratio, retries, dead letters and invariants
 ```
 
 The scenario is one command, one seed and one report. It is not a benchmark;
-the chapter benchmarks are separate.
+the chapter benchmarks are separate. The default run admits 807 of 900
+requests, creates 161 links, resolves 646, enqueues 697 jobs and dead-letters
+122; all 35 invariants pass. Text and JSON reports are written under
+`var/results/`.
 
 ## Documentation
 
