@@ -307,7 +307,34 @@ Every chapter follows the same definition of done:
 8. `make test analyse format-check` green; this document updated.
 9. One logical commit.
 
-Status: ⏳ planned.
+### Phase 2 — Chapter 01: Rate Limiter — code and measurements complete
+
+**Status (2026-10-27):** implementation, tests, experiments and benchmark
+suite are complete.
+
+**Code:** `src/RateLimiter/` contains `TokenBucket`, `FixedWindowCounter`,
+`SlidingWindowLog`, `SlidingWindowCounter`, `UnlimitedLimiter`, the shared
+`RateLimiter` contract and the `Decision` result. Time is an explicit
+`nowMs`; token buckets use integer nano-token units to avoid float drift.
+
+**Expected complexity:** all four policies do O(1) work per attempt in the
+common case; the sliding log uses O(limit) memory per tracked key, the other
+three use O(1) per key.
+
+**Experiments:** `rate:burst` at a window boundary, `rate:accuracy` against an
+exact oracle, `rate:memory` at 10,000 keys.
+
+**Result:** 74 tests pass; the fixed window admitted 40 of 60 boundary
+requests and reached 20 in a 1,000 ms interval, while the exact log and the
+token bucket stayed at 10. The accuracy run recorded 151 false allows and 151
+false denies for the fixed window, and 165/166 for the two-window estimate.
+The sliding log used 553.8 bytes/key versus 145.7–161.7 for the others. The
+development benchmark put the sliding-log allow path at 13.313 ms for 20,000
+attempts and the token bucket at 10.789 ms.
+
+**Book:** the boundary double-spend, the difference between an exact log and
+an estimate, and why a limiter needs a defined contract for clock and key
+scope. Deferred to the book phase.
 
 ---
 
