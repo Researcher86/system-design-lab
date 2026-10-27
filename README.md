@@ -9,8 +9,10 @@
 
 This repository is the code behind the seven chapters of
 [System Design Lab](https://github.com/Researcher86/engineering-lab-book/tree/master/system-design-lab).
-The Docker environment, the measurement harness and the seven chapters are
-built in public; the build journal lives in [docs/PHASES.md](docs/PHASES.md).
+The Docker environment, the measurement harness, the seven chapters and the
+short-link platform scenario are complete. The code release is tagged
+[`v1.0.0`](https://github.com/Researcher86/system-design-lab/releases/tag/v1.0.0);
+the build journal lives in [docs/PHASES.md](docs/PHASES.md).
 
 ---
 
