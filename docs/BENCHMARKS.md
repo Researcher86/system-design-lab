@@ -62,6 +62,11 @@ environment and always include the block above.
 
 Results are appended after the chapters are implemented and measured.
 
+The tables below are from the final `v1.0.0` measurement run. Its environment
+block reported git `aa115e1` on the same Docker image; the timings were re-run
+on the tag and replace the earlier development numbers. Deterministic
+counters are unchanged.
+
 ### Chapter 01 — Rate limiter
 
 Development run in Docker on macOS (aarch64, PHP 8.5.11, OPcache CLI off, JIT
@@ -89,14 +94,14 @@ and window 1,000 ms:
 | token-bucket | 1.5 MiB | 158.3 |
 | fixed-window | 1.4 MiB | 145.7 |
 | sliding-log | 5.3 MiB | 553.8 |
-| sliding-counter | 1.5 MiB | 161.7 |
+| sliding-counter | 1.6 MiB | 168.3 |
 
 The sliding log is exact but stores accepted timestamps; the other policies
 keep one record per key. The measurement is PHP allocator memory, not RSS.
 
 `make benchmark ARGS="rate-limiter --repetitions=3"` medians (20,000
-iterations): unlimited 4.786 ms, token-bucket allow 10.789 ms, fixed-window
-allow 10.343 ms, sliding-log allow 13.313 ms, sliding-counter allow 10.840 ms.
+iterations): unlimited 4.786 ms, token-bucket allow 10.705 ms, fixed-window
+allow 9.780 ms, sliding-log allow 10.602 ms, sliding-counter allow 10.656 ms.
 The allow benchmarks create a state record per new key; the deny benchmarks
 measure the steady-state rejection path.
 
@@ -183,15 +188,15 @@ allocator memory, not RSS.
 
 | benchmark | iterations | median ms | ops/sec |
 |---|---:|---:|---:|
-| base62 encode 7 | 100,000 | 30.732 | 3,253,946 |
-| base62 decode 7 | 100,000 | 31.771 | 3,147,558 |
-| sequential id | 100,000 | 5.219 | 19,159,382 |
-| random id | 100,000 | 32.856 | 3,043,569 |
-| hash id | 100,000 | 24.482 | 4,084,620 |
-| shorten new link | 5,000 | 7.852 | 636,811 |
-| shorten idempotent hit | 50,000 | 36.367 | 1,374,870 |
-| resolve hit | 100,000 | 28.419 | 3,518,747 |
-| resolve miss | 100,000 | 25.521 | 3,918,329 |
+| base62 encode 7 | 100,000 | 29.650 | 3,372,643 |
+| base62 decode 7 | 100,000 | 30.834 | 3,243,160 |
+| sequential id | 100,000 | 5.077 | 19,695,217 |
+| random id | 100,000 | 31.609 | 3,163,627 |
+| hash id | 100,000 | 24.529 | 4,076,786 |
+| shorten new link | 5,000 | 8.089 | 618,155 |
+| shorten idempotent hit | 50,000 | 36.392 | 1,373,930 |
+| resolve hit | 100,000 | 28.697 | 3,484,680 |
+| resolve miss | 100,000 | 25.754 | 3,882,848 |
 
 A new link pays for object construction, two index inserts and a write
 counter; an idempotent hit pays for the URL lookup and returns the existing
@@ -246,14 +251,14 @@ window is exclusive at the end: 08:00 is allowed.
 
 | benchmark | iterations | median ms | ops/sec |
 |---|---:|---:|---:|
-| preference lookup | 100,000 | 9.257 | 10,802,149 |
-| dedup new key | 100,000 | 21.381 | 4,677,113 |
-| dedup duplicate | 100,000 | 14.713 | 6,796,826 |
-| quiet hours contains | 100,000 | 10.086 | 9,915,102 |
-| digest add | 20,000 | 4.533 | 4,412,089 |
-| notify one channel | 20,000 | 26.207 | 763,142 |
-| notify three channels | 20,000 | 53.702 | 372,426 |
-| notify duplicate | 100,000 | 127.227 | 785,996 |
+| preference lookup | 100,000 | 8.056 | 12,413,236 |
+| dedup new key | 100,000 | 21.024 | 4,756,365 |
+| dedup duplicate | 100,000 | 14.966 | 6,681,794 |
+| quiet hours contains | 100,000 | 9.973 | 10,026,780 |
+| digest add | 20,000 | 4.511 | 4,433,443 |
+| notify one channel | 20,000 | 26.275 | 761,181 |
+| notify three channels | 20,000 | 52.733 | 379,268 |
+| notify duplicate | 100,000 | 130.728 | 764,948 |
 
 The one-channel and three-channel planning benchmarks differ by roughly the
 fan-out factor. The duplicate path still pays the preference lookup and one
@@ -263,9 +268,8 @@ dedup claim per channel, so suppression is cheaper than planning but not free.
 ### Chapter 04 — Job queue
 
 Development run in Docker on macOS (aarch64, PHP 8.5.11, OPcache CLI off, JIT
-off, Xdebug off, Zend MM). The environment block reported git `4070dc5`
-because the chapter 04 tree was uncommitted at measurement time. These are
-relative observations, not universal constants.
+off, Xdebug off, Zend MM). These are relative observations, not universal
+constants.
 
 `make experiment ARGS="queue:retry"` drove 1,000 jobs with a three-attempt
 budget; every fifth job failed permanently:
@@ -339,12 +343,12 @@ same queue drains instead of growing.
 
 | benchmark | iterations | median ms | ops/sec |
 |---|---:|---:|---:|
-| enqueue ready | 10,000 | 12.494 | 800,379 |
-| enqueue delayed | 10,000 | 7.653 | 1,306,620 |
-| enqueue lease complete | 20,000 | 30.512 | 655,491 |
-| enqueue lease fail | 10,000 | 15.678 | 637,826 |
-| promote due | 10,000 | 10.706 | 934,041 |
-| oldest pending | 100,000 | 12.993 | 7,696,550 |
+| enqueue ready | 10,000 | 11.381 | 878,667 |
+| enqueue delayed | 10,000 | 7.605 | 1,314,953 |
+| enqueue lease complete | 20,000 | 37.224 | 537,288 |
+| enqueue lease fail | 10,000 | 16.815 | 594,692 |
+| promote due | 10,000 | 11.676 | 856,458 |
+| oldest pending | 100,000 | 13.373 | 7,477,521 |
 
 The delayed enqueue is cheaper than the ready enqueue in this run because the
 delayed heap does not compete with promotions; the round trip pays for the
@@ -355,9 +359,8 @@ popped lazily, so it mostly measures the method call rather than a scan.
 ### Chapter 05 — Distributed cache
 
 Development run in Docker on macOS (aarch64, PHP 8.5.11, OPcache CLI off, JIT
-off, Xdebug off, Zend MM). The environment block reported git `857d69e`
-because the chapter 05 tree was uncommitted at measurement time. These are
-relative observations, not universal constants.
+off, Xdebug off, Zend MM). These are relative observations, not universal
+constants.
 
 `make experiment ARGS="cache:remap"` placed 20,000 keys on eight nodes, added
 a ninth and counted the keys whose primary node changed:
@@ -430,14 +433,14 @@ O(nodes) per lookup.
 
 | benchmark | iterations | median ms | ops/sec |
 |---|---:|---:|---:|
-| modulo locate | 100,000 | 38.404 | 2,603,921 |
-| ring locate | 100,000 | 79.945 | 1,250,856 |
-| ring locate rf3 | 100,000 | 90.098 | 1,109,906 |
-| rendezvous locate | 100,000 | 578.122 | 172,974 |
-| lru get hit | 100,000 | 18.522 | 5,399,021 |
-| lru put evict | 20,000 | 54.539 | 366,709 |
-| cluster get rf1 | 100,000 | 133.203 | 750,731 |
-| cluster put rf2 | 20,000 | 29.045 | 688,594 |
+| modulo locate | 100,000 | 39.951 | 2,503,051 |
+| ring locate | 100,000 | 76.653 | 1,304,581 |
+| ring locate rf3 | 100,000 | 89.946 | 1,111,784 |
+| rendezvous locate | 100,000 | 592.274 | 168,841 |
+| lru get hit | 100,000 | 19.292 | 5,183,574 |
+| lru put evict | 20,000 | 56.745 | 352,452 |
+| cluster get rf1 | 100,000 | 134.343 | 744,365 |
+| cluster put rf2 | 20,000 | 28.535 | 700,894 |
 
 The ring pays a binary search over 3,000 virtual-node positions; rendezvous
 pays a scan of 20 nodes for every key. The cluster read adds the placement
@@ -448,9 +451,8 @@ put.
 ### Chapter 06 — Webhook delivery
 
 Development run in Docker on macOS (aarch64, PHP 8.5.11, OPcache CLI off, JIT
-off, Xdebug off, Zend MM). The environment block reported git `7147c4f`
-because the chapter 06 tree was uncommitted at measurement time. These are
-relative observations, not universal constants.
+off, Xdebug off, Zend MM). These are relative observations, not universal
+constants.
 
 `make experiment ARGS="webhook:retry"` sent 1,000 events with a four-attempt
 budget and a 100 ms base delay. Every third delivery failed once, every third
@@ -534,13 +536,13 @@ was the delivery that carried the failed probes.
 
 | benchmark | iterations | median ms | ops/sec |
 |---|---:|---:|---:|
-| sign | 100,000 | 199.366 | 501,591 |
-| verify | 100,000 | 228.754 | 437,150 |
-| dispatch 1 | 20,000 | 15.113 | 1,323,346 |
-| dispatch 10 | 10,000 | 44.474 | 224,850 |
-| breaker allow closed | 100,000 | 11.490 | 8,703,063 |
-| breaker reject open | 100,000 | 12.747 | 7,844,829 |
-| worker deliver success | 20,000 | 88.376 | 226,307 |
+| sign | 100,000 | 205.776 | 485,966 |
+| verify | 100,000 | 220.410 | 453,699 |
+| dispatch 1 | 20,000 | 14.432 | 1,385,829 |
+| dispatch 10 | 10,000 | 44.318 | 225,641 |
+| breaker allow closed | 100,000 | 11.439 | 8,741,801 |
+| breaker reject open | 100,000 | 12.725 | 7,858,520 |
+| worker deliver success | 20,000 | 90.980 | 219,828 |
 
 Signing and verification are dominated by HMAC-SHA256 and string work, not by
 the PHP object graph. Dispatch cost grows with the number of matching
@@ -550,9 +552,8 @@ transport call, the circuit update, the processed-id mark and the counters.
 ### Chapter 07 — Search engine
 
 Development run in Docker on macOS (aarch64, PHP 8.5.11, OPcache CLI off, JIT
-off, Xdebug off, Zend MM). The environment block reported git `b9104cb`
-because the chapter 07 tree was uncommitted at measurement time. These are
-relative observations, not universal constants. The corpus is synthetic: each
+off, Xdebug off, Zend MM). These are relative observations, not universal
+constants. The corpus is synthetic: each
 document has one topic term and a body sampled from a Zipf distribution over a
 fixed vocabulary.
 
@@ -649,19 +650,19 @@ rather than hiding it.
 
 | benchmark | iterations | median ms | ops/sec |
 |---|---:|---:|---:|
-| tokenize | 100,000 | 47.631 | 2,099,482 |
-| index document | 2,000 | 4.078 | 490,492 |
-| bm25 rare term | 20,000 | 166.622 | 120,032 |
-| bm25 common term | 2,000 | 3,279.210 | 610 |
-| bm25 mixed terms | 2,000 | 3,312.350 | 604 |
-| prefix complete | 100,000 | 150.727 | 663,450 |
-| cluster search 4 rare | 10,000 | 137.961 | 72,484 |
-| cluster search 4 common | 1,000 | 1,344.616 | 744 |
-| cluster index document | 2,000 | 4.828 | 414,215 |
+| tokenize | 100,000 | 46.538 | 2,148,762 |
+| index document | 2,000 | 3.936 | 508,109 |
+| bm25 rare term | 20,000 | 193.888 | 103,152 |
+| bm25 common term | 2,000 | 3,955.336 | 506 |
+| bm25 mixed terms | 2,000 | 4,001.695 | 500 |
+| prefix complete | 100,000 | 147.132 | 679,663 |
+| cluster search 4 rare | 10,000 | 143.548 | 69,663 |
+| cluster search 4 common | 1,000 | 1,607.033 | 622 |
+| cluster index document | 2,000 | 4.796 | 416,996 |
 
 The common-term queries are roughly 20x slower than the rare-term query
 because they score almost the whole index rather than about 20 postings. The
-cluster variant of the common query is slightly faster than the single-index
+cluster variant of the common query is much faster than the single-index
 variant in this run because each shard sorts a smaller candidate set before
 the merge; the postings are the same. The index and cluster index benchmarks
 grow their indexes during the run, so their memory delta belongs to the
