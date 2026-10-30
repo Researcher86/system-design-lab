@@ -660,10 +660,10 @@ rather than hiding it.
 | cluster search 4 common | 1,000 | 1,607.033 | 622 |
 | cluster index document | 2,000 | 4.796 | 416,996 |
 
-The common-term queries are roughly 20x slower than the rare-term query
-because they score almost the whole index rather than about 20 postings. The
-cluster variant of the common query is much faster than the single-index
-variant in this run because each shard sorts a smaller candidate set before
-the merge; the postings are the same. The index and cluster index benchmarks
-grow their indexes during the run, so their memory delta belongs to the
-benchmark, not to a fixed index size.
+Per query, the common-term queries are roughly 200x slower than the rare-term
+query (506 and 500 against 103,152 ops/sec) because they score almost the whole
+index rather than about 20 postings. The cluster variant of the common query is
+much faster than the single-index variant in this run because each shard sorts
+a smaller candidate set before the merge; the postings are the same. The index
+and cluster index benchmarks grow their indexes during the run, so their memory
+delta belongs to the benchmark, not to a fixed index size.
