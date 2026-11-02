@@ -306,8 +306,10 @@ dead-letter list, after every attempt has been spent.
 
 A crashed worker never reports failure. The queue sees the job again only when
 the visibility timeout expires, and the expiration consumes an attempt. A job
-that crashes on its last attempt is dead-lettered on expiry. The lease budget
-bounds concurrency; it does not make delivery exactly-once.
+that crashes on its last attempt is dead-lettered on expiry. The peak of four
+concurrent leases is the number of workers: the experiment lets each worker hold
+at most one lease, and the queue itself does not limit them. Leases do not make
+delivery exactly-once.
 
 `make experiment ARGS="queue:priority"` enqueued 200 jobs at each of five
 priority levels before leasing:
